@@ -1,0 +1,33 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Cortex — Multi-Agent RAG Application"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.136.3",
+    "uvicorn>=0.48.0",
+    "python-multipart>=0.0.20",
+
+    # LLM & Agents
+    "langchain>=0.3.0",
+    "langchain-groq>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.2.0",
+
+    # Vector store (Qdrant with fastembed - lightweight ONNX embeddings, no CUDA)
+    "qdrant-client[fastembed]>=1.12.0",
+
+    # Web search
+    "tavily-python>=0.5.0",
+
+    # Document parsing
+    "pymupdf>=1.25.0",
+    "python-docx>=1.1.0",
+
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.28.0",
+]
