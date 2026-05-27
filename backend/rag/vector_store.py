@@ -22,9 +22,17 @@ logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def get_client() -> QdrantClient:
-    """Return the shared Qdrant client (local file-based, fastembed enabled)."""
-    logger.info("Initialising Qdrant at: %s", config.QDRANT_PATH)
-    return QdrantClient(path=config.QDRANT_PATH)
+    """Return the shared Qdrant client pointing to Qdrant Cloud."""
+    if not config.QDRANT_URL or not config.QDRANT_API_KEY:
+        raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in your configuration.")
+    
+    logger.info("Connecting to Qdrant Cloud at: %s", config.QDRANT_URL)
+    return QdrantClient(
+        url=config.QDRANT_URL,
+        api_key=config.QDRANT_API_KEY,
+    )
+
+
 
 
 # ── Collection helpers ────────────────────────────────────────────────────────
