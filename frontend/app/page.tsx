@@ -35,7 +35,7 @@ const WELCOME: Message = {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [sessionId] = useState(() => getOrCreateSessionId());
+  const [sessionId, setSessionId] = useState("ssr");
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -44,8 +44,14 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Initialize session ID on mount to prevent SSR hydration mismatch
+  useEffect(() => {
+    setSessionId(getOrCreateSessionId());
+  }, []);
+
   // Load documents list on mount
   useEffect(() => {
+    if (sessionId === "ssr") return;
     fetch(`http://localhost:8000/api/documents?session_id=${sessionId}`)
       .then((r) => r.json())
       .then((d) => setDocuments(d.documents || []))
