@@ -28,18 +28,7 @@ function formatContent(text: string): React.ReactNode {
     elements.push(
       <pre
         key={key}
-        style={{
-          background: "var(--bg-base)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-sm)",
-          padding: "12px 16px",
-          overflowX: "auto",
-          fontSize: "13px",
-          lineHeight: 1.6,
-          margin: "8px 0",
-          color: "#a5b4fc",
-          fontFamily: "'Fira Code', 'Cascadia Code', monospace",
-        }}
+        className="bg-bg-base border border-border rounded-sm px-4 py-3 overflow-x-auto text-[13px] leading-relaxed my-2 text-[#a5b4fc] font-mono"
       >
         <code>{codeLines.join("\n")}</code>
       </pre>
@@ -66,22 +55,22 @@ function formatContent(text: string): React.ReactNode {
 
     // Headings
     if (line.startsWith("### ")) {
-      elements.push(<h3 key={i} style={{ fontSize: "15px", fontWeight: 600, margin: "12px 0 4px", color: "var(--text-primary)" }}>{line.slice(4)}</h3>);
+      elements.push(<h3 key={i} className="text-[15px] font-semibold mt-3 mb-1 text-text-primary">{line.slice(4)}</h3>);
     } else if (line.startsWith("## ")) {
-      elements.push(<h2 key={i} style={{ fontSize: "16px", fontWeight: 700, margin: "14px 0 6px", color: "var(--text-primary)" }}>{line.slice(3)}</h2>);
+      elements.push(<h2 key={i} className="text-[16px] font-bold mt-3.5 mb-1.5 text-text-primary">{line.slice(3)}</h2>);
     } else if (line.startsWith("# ")) {
-      elements.push(<h1 key={i} style={{ fontSize: "18px", fontWeight: 700, margin: "16px 0 8px", color: "var(--text-primary)" }}>{line.slice(2)}</h1>);
+      elements.push(<h1 key={i} className="text-[18px] font-bold mt-4 mb-2 text-text-primary">{line.slice(2)}</h1>);
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
       elements.push(
-        <li key={i} style={{ marginLeft: "16px", marginBottom: "2px", lineHeight: 1.6, color: "var(--text-primary)" }}>
+        <li key={i} className="ml-4 mb-0.5 leading-relaxed text-text-primary">
           {renderInline(line.slice(2))}
         </li>
       );
     } else if (line.trim() === "") {
-      elements.push(<div key={i} style={{ height: "6px" }} />);
+      elements.push(<div key={i} className="h-1.5" />);
     } else {
       elements.push(
-        <p key={i} style={{ lineHeight: 1.7, color: "var(--text-primary)", marginBottom: "2px" }}>
+        <p key={i} className="leading-[1.7] text-text-primary mb-0.5">
           {renderInline(line)}
         </p>
       );
@@ -98,11 +87,11 @@ function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} style={{ fontWeight: 600, color: "var(--text-primary)" }}>{part.slice(2, -2)}</strong>;
+      return <strong key={i} className="font-semibold text-text-primary">{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
-        <code key={i} style={{ background: "var(--bg-overlay)", padding: "1px 5px", borderRadius: "4px", fontSize: "13px", color: "#a5b4fc", fontFamily: "monospace" }}>
+        <code key={i} className="bg-bg-overlay px-[5px] py-[1px] rounded-[4px] text-[13px] text-[#a5b4fc] font-mono">
           {part.slice(1, -1)}
         </code>
       );
@@ -116,26 +105,10 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   if (isUser) {
     return (
-      <div
-        className="fade-in"
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          marginBottom: "16px",
-        }}
-      >
+      <div className="fade-in flex justify-end mb-4">
         <div
-          style={{
-            maxWidth: "70%",
-            background: "linear-gradient(135deg, var(--accent-primary), #6366f1)",
-            color: "#fff",
-            padding: "12px 16px",
-            borderRadius: "var(--radius-lg) var(--radius-lg) 4px var(--radius-lg)",
-            fontSize: "14px",
-            lineHeight: 1.6,
-            boxShadow: "0 4px 16px var(--accent-glow)",
-            wordBreak: "break-word",
-          }}
+          className="max-w-[70%] text-white px-4 py-3 rounded-[var(--radius-lg)_var(--radius-lg)_4px_var(--radius-lg)] text-[14px] leading-relaxed shadow-glow break-words"
+          style={{ background: "linear-gradient(135deg, var(--color-accent-primary), #6366f1)" }}
         >
           {message.content}
         </div>
@@ -145,58 +118,30 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   // Assistant message
   return (
-    <div
-      className="fade-in"
-      style={{
-        display: "flex",
-        gap: "12px",
-        marginBottom: "20px",
-        alignItems: "flex-start",
-      }}
-    >
+    <div className="fade-in flex gap-3 mb-5 items-start">
       {/* Avatar */}
       <div
-        style={{
-          width: "32px",
-          height: "32px",
-          borderRadius: "var(--radius-full)",
-          background: "linear-gradient(135deg, var(--accent-primary), #6366f1)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: "14px",
-          flexShrink: 0,
-          boxShadow: "0 0 12px var(--accent-glow)",
-        }}
+        className="w-8 h-8 rounded-full flex items-center justify-center text-[14px] shrink-0 shadow-[0_0_12px_var(--color-accent-glow)]"
+        style={{ background: "linear-gradient(135deg, var(--color-accent-primary), #6366f1)" }}
       >
         ✦
       </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="flex-1 min-w-0">
         {/* Header row */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-          <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)" }}>Cortex</span>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[13px] font-semibold text-text-secondary">Cortex</span>
           {message.source && !message.isLoading && (
             <SourceBadge source={message.source} small />
           )}
         </div>
 
         {/* Content */}
-        <div
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: "4px var(--radius-lg) var(--radius-lg) var(--radius-lg)",
-            padding: "14px 16px",
-            fontSize: "14px",
-            lineHeight: 1.7,
-            boxShadow: "var(--shadow-sm)",
-          }}
-        >
+        <div className="bg-bg-surface border border-border rounded-[4px_var(--radius-lg)_var(--radius-lg)_var(--radius-lg)] px-4 py-3.5 text-[14px] leading-[1.7] shadow-sm">
           {message.isLoading ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div className="flex items-center gap-2.5">
               <div className="spinner" />
-              <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>Thinking…</span>
+              <span className="text-text-muted text-[13px]">Thinking…</span>
             </div>
           ) : (
             formatContent(message.content)
@@ -205,7 +150,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Citations */}
         {!message.isLoading && message.citations && message.citations.length > 0 && (
-          <div style={{ marginTop: "8px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {message.citations.map((cite, i) => (
               <a
                 key={i}
@@ -213,24 +158,9 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                 target="_blank"
                 rel="noopener noreferrer"
                 title={cite}
-                style={{
-                  fontSize: "11px",
-                  padding: "2px 8px",
-                  borderRadius: "var(--radius-full)",
-                  background: "var(--bg-overlay)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-muted)",
-                  textDecoration: "none",
-                  cursor: cite.startsWith("http") ? "pointer" : "default",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "220px",
-                  display: "inline-block",
-                  transition: "color 0.2s",
-                }}
-                onMouseEnter={e => { if (cite.startsWith("http")) (e.target as HTMLElement).style.color = "var(--text-primary)"; }}
-                onMouseLeave={e => { (e.target as HTMLElement).style.color = "var(--text-muted)"; }}
+                className={`text-[11px] px-2 py-0.5 rounded-full bg-bg-overlay border border-border text-text-muted no-underline whitespace-nowrap overflow-hidden text-ellipsis max-w-[220px] inline-block transition-colors ${
+                  cite.startsWith("http") ? "cursor-pointer hover:text-text-primary" : "cursor-default"
+                }`}
               >
                 {cite.startsWith("http") ? `🔗 ${new URL(cite).hostname}` : `📄 ${cite}`}
               </a>

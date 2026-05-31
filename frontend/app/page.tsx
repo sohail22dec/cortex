@@ -1,15 +1,20 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import ChatMessage, { Message } from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
-import DocumentUpload from "./components/DocumentUpload";
-import DocumentList from "./components/DocumentList";
-import SourceBadge from "./components/SourceBadge";
+import Sidebar from "./components/Sidebar";
 
-// ── Session ID (persisted in localStorage) ────────────────────────────────────
-function getOrCreateSessionId(): string {
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+}
+
+// ── Persistent State ────────────────────────────────────────────────────────
+function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "ssr";
-  const key = "cortex_session_id";
+  const key = "cortex_user_id";
   let id = localStorage.getItem(key);
   if (!id) {
     id = crypto.randomUUID();
@@ -18,25 +23,24 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
-// ── Welcome messages ──────────────────────────────────────────────────────────
-const WELCOME: Message = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Hello! I'm **Cortex**, your multi-agent AI assistant.\n\n" +
-    "Here's how I work:\n" +
-    "- 📄 **Upload documents** → I'll answer questions from them\n" +
-    "- 🧠 **General questions** → I'll use my own knowledge\n" +
-    "- 🌐 **Need current info?** → I'll search the web automatically\n\n" +
-    "Start by uploading a document, or just ask me anything!",
-  source: "llm",
-  citations: [],
-};
+function loadSessions(): ChatSession[] {
+  if (typeof window === "undefined") return [];
+  const stored = localStorage.getItem("cortex_sessions");
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveSessions(sessions: ChatSession[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("cortex_sessions", JSON.stringify(sessions));
+  }
+}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [sessionId, setSessionId] = useState("ssr");
-  const [messages, setMessages] = useState<Message[]>([WELCOME]);
+  const [userId, setUserId] = useState("ssr");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [documents, setDocuments] = useState<string[]>([]);
@@ -44,28 +48,100 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize session ID on mount to prevent SSR hydration mismatch
+  // Initialize on mount
   useEffect(() => {
-    setSessionId(getOrCreateSessionId());
+    setUserId(getOrCreateUserId());
+    const loaded = loadSessions();
+    setSessions(loaded);
+    if (loaded.length > 0) {
+      setActiveChatId(loaded[0].id);
+    }
   }, []);
 
-  // Load documents list on mount
+  // Load documents for this user (global knowledge base)
   useEffect(() => {
-    if (sessionId === "ssr") return;
-    fetch(`http://localhost:8000/api/documents?session_id=${sessionId}`)
+    if (userId === "ssr") return;
+    fetch(`http://localhost:8000/api/documents?session_id=${userId}`)
       .then((r) => r.json())
       .then((d) => setDocuments(d.documents || []))
-      .catch(() => {});
-  }, [sessionId]);
+      .catch(() => { });
+  }, [userId]);
+
+  // Derived active messages
+  const activeSession = sessions.find(s => s.id === activeChatId);
+  const messages = activeSession ? activeSession.messages : [];
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = useCallback(async () => {
-    const question = input.trim();
+  // Session state updates
+  const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
+    setSessions((prevSessions) => {
+      let activeIdx = prevSessions.findIndex((s) => s.id === activeChatId);
+      
+      let updatedSession: ChatSession;
+      if (activeIdx === -1) {
+        // Create new session lazily
+        const initialMsgs = typeof newMessages === "function" ? newMessages([]) : newMessages;
+        updatedSession = {
+          id: crypto.randomUUID(),
+          title: initialMsgs.length > 0 ? initialMsgs[0].content.slice(0, 30) + "..." : "New Chat",
+          messages: initialMsgs,
+          createdAt: Date.now(),
+        };
+        const updated = [updatedSession, ...prevSessions];
+        saveSessions(updated);
+        setTimeout(() => setActiveChatId(updatedSession.id), 0); // Async update to avoid render conflict
+        return updated;
+      } else {
+        const session = prevSessions[activeIdx];
+        const updatedMsgs = typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
+        updatedSession = { ...session, messages: updatedMsgs };
+        
+        // Update title if first message
+        if (session.messages.length === 0 && updatedMsgs.length > 0 && updatedMsgs[0].role === "user") {
+          updatedSession.title = updatedMsgs[0].content.slice(0, 30) + "...";
+        }
+        
+        const updated = [...prevSessions];
+        updated[activeIdx] = updatedSession;
+        saveSessions(updated);
+        return updated;
+      }
+    });
+  }, [activeChatId]);
+
+  const createNewChat = useCallback(() => {
+    const newId = crypto.randomUUID();
+    const newSession: ChatSession = {
+      id: newId,
+      title: "New Chat",
+      messages: [],
+      createdAt: Date.now(),
+    };
+    const updated = [newSession, ...sessions];
+    setSessions(updated);
+    saveSessions(updated);
+    setActiveChatId(newId);
+  }, [sessions]);
+
+  const deleteChat = useCallback((id: string) => {
+    const updated = sessions.filter(s => s.id !== id);
+    setSessions(updated);
+    saveSessions(updated);
+    if (activeChatId === id) {
+      setActiveChatId(updated.length > 0 ? updated[0].id : null);
+    }
+  }, [sessions, activeChatId]);
+
+  const handleSend = useCallback(async (customInput?: string) => {
+    const question = (typeof customInput === "string" ? customInput : input).trim();
     if (!question || isLoading) return;
+
+    // If there is no active chat and user sends a message, activeChatId might be null.
+    // The setMessages logic handles lazy creation.
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -87,7 +163,8 @@ export default function Home() {
       const res = await fetch("http://localhost:8000/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: question, session_id: sessionId }),
+        // Passing userId as session_id allows backend to access the global knowledge base!
+        body: JSON.stringify({ message: question, session_id: userId }),
       });
       const data = await res.json();
 
@@ -113,181 +190,59 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, sessionId]);
+  }, [input, isLoading, userId, setMessages]);
 
   const handleDocumentUploaded = useCallback((filename: string, chunks: number) => {
     setDocuments((prev) => prev.includes(filename) ? prev : [...prev, filename]);
     const notice: Message = {
       id: crypto.randomUUID(),
       role: "assistant",
-      content: `✅ **"${filename}"** has been indexed successfully (${chunks} chunks). You can now ask questions about it!`,
+      content: `✅ **"${filename}"** has been indexed to your global knowledge base.`,
       source: "rag",
       citations: [],
     };
     setMessages((prev) => [...prev, notice]);
-  }, []);
+  }, [setMessages]);
 
   const handleDocumentDeleted = useCallback((filename: string) => {
     setDocuments((prev) => prev.filter((d) => d !== filename));
     const notice: Message = {
       id: crypto.randomUUID(),
       role: "assistant",
-      content: `🗑️ **"${filename}"** has been removed from your session.`,
+      content: `🗑️ **"${filename}"** has been removed from your global knowledge base.`,
       source: "llm",
       citations: [],
     };
     setMessages((prev) => [...prev, notice]);
-  }, []);
-
-  const clearChat = () => {
-    setMessages([WELCOME]);
-  };
+  }, [setMessages]);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100vh",
-        overflow: "hidden",
-        background: "var(--bg-base)",
-      }}
-    >
-      {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside
-        style={{
-          width: sidebarOpen ? "300px" : "0px",
-          minWidth: sidebarOpen ? "300px" : "0px",
-          overflow: "hidden",
-          transition: "all 0.3s ease",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--bg-surface)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ padding: "20px", flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "20px" }}>
-          {/* Logo */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "10px",
-                background: "linear-gradient(135deg, var(--accent-primary), #6366f1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "18px",
-                boxShadow: "0 0 16px var(--accent-glow)",
-                flexShrink: 0,
-              }}
-            >
-              ✦
-            </div>
-            <div>
-              <h1 className="glow-text" style={{ fontSize: "18px", fontWeight: 700, lineHeight: 1.2 }}>
-                Cortex
-              </h1>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>Multi-Agent RAG</p>
-            </div>
-          </div>
-
-          {/* How it routes */}
-          <div
-            style={{
-              padding: "12px",
-              background: "var(--bg-base)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
-            <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "10px" }}>
-              Smart Routing
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {(["rag", "llm", "web_search"] as const).map((src) => (
-                <div key={src} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <SourceBadge source={src} small />
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                    {src === "rag" ? "When you ask about docs" : src === "llm" ? "General knowledge" : "Current/live info"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Upload section */}
-          <div>
-            <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "10px" }}>
-              Documents
-            </p>
-            <DocumentUpload
-              sessionId={sessionId}
-              onUploaded={handleDocumentUploaded}
-              isUploading={isUploading}
-              setIsUploading={setIsUploading}
-            />
-          </div>
-
-          {/* Document list */}
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "10px" }}>
-              Indexed ({documents.length})
-            </p>
-            <DocumentList
-              documents={documents}
-              sessionId={sessionId}
-              onDeleted={handleDocumentDeleted}
-            />
-          </div>
-        </div>
-
-        {/* Session info */}
-        <div
-          style={{
-            padding: "12px 16px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-base)",
-          }}
-        >
-          <p style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "monospace" }}>
-            Session: {sessionId.slice(0, 8)}…
-          </p>
-        </div>
-      </aside>
+    <div className="flex h-screen overflow-hidden bg-bg-base">
+      <Sidebar
+        sidebarOpen={sidebarOpen}
+        userId={userId}
+        documents={documents}
+        isUploading={isUploading}
+        setIsUploading={setIsUploading}
+        onDocumentUploaded={handleDocumentUploaded}
+        onDocumentDeleted={handleDocumentDeleted}
+        
+        sessions={sessions}
+        activeChatId={activeChatId}
+        onSelectChat={setActiveChatId}
+        onNewChat={createNewChat}
+        onDeleteChat={deleteChat}
+      />
 
       {/* ── Main chat area ────────────────────────────────────────────────── */}
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            padding: "14px 20px",
-            background: "var(--bg-surface)",
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
-        >
+        <header className="flex items-center gap-3 px-5 py-3.5 bg-bg-surface border-b border-border shrink-0">
           <button
             id="toggle-sidebar"
             onClick={() => setSidebarOpen((o) => !o)}
             aria-label="Toggle sidebar"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "4px",
-              borderRadius: "var(--radius-sm)",
-              display: "flex",
-              alignItems: "center",
-              transition: "color 0.2s",
-            }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "var(--text-primary)"; }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "var(--text-muted)"; }}
+            className="group flex items-center p-1 rounded-sm bg-transparent border-none text-text-muted cursor-pointer transition-colors hover:text-text-primary"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -296,110 +251,108 @@ export default function Home() {
             </svg>
           </button>
 
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
-              Chat with Cortex
+          <div className="flex-1">
+            <h2 className="text-[14px] font-semibold text-text-primary">
+              {activeSession ? activeSession.title : "New Chat"}
             </h2>
-            <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+            <p className="text-[11px] text-text-muted">
               {documents.length > 0
-                ? `${documents.length} document${documents.length > 1 ? "s" : ""} indexed · Ask anything`
-                : "No documents — ask general questions or upload files"}
+                ? `${documents.length} document${documents.length > 1 ? "s" : ""} globally indexed`
+                : "No documents indexed — AI will use general knowledge"}
             </p>
           </div>
-
-          <button
-            id="clear-chat"
-            onClick={clearChat}
-            aria-label="Clear chat"
-            style={{
-              background: "var(--bg-overlay)",
-              border: "1px solid var(--border)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "6px 12px",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              transition: "all 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget as HTMLElement;
-              el.style.color = "var(--text-primary)";
-              el.style.borderColor = "var(--border-hover)";
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget as HTMLElement;
-              el.style.color = "var(--text-muted)";
-              el.style.borderColor = "var(--border)";
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="1 4 1 10 7 10" />
-              <path d="M3.51 15a9 9 0 1 0 .49-4.86L1 10" />
-            </svg>
-            Clear
-          </button>
         </header>
 
         {/* Messages */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "24px 20px",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Background gradient blobs */}
-          <div
-            aria-hidden
-            style={{
-              position: "fixed",
-              top: "20%",
-              right: "10%",
-              width: "400px",
-              height: "400px",
-              borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%)",
-              pointerEvents: "none",
-              zIndex: 0,
-            }}
-          />
+        <div className="flex-1 overflow-y-auto px-5 pt-6 pb-2 flex flex-col relative">
+          <div className="flex-1 max-w-[760px] w-full mx-auto relative z-10 flex flex-col justify-start">
+            {messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-start pt-12 md:pt-20 px-4 py-8 fade-in select-none">
+                {/* Visual Header */}
+                <div className="w-14 h-14 rounded-2xl bg-accent-primary flex items-center justify-center text-[26px] text-white shadow-glow mb-6 animate-pulse">
+                  ✦
+                </div>
 
-          <div style={{ flex: 1, maxWidth: "760px", width: "100%", margin: "0 auto", position: "relative", zIndex: 1 }}>
-            {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
-            ))}
-            <div ref={messagesEndRef} />
+                <h2 className="glow-text text-3xl md:text-4xl font-extrabold text-center tracking-tight mb-2">
+                  Cortex
+                </h2>
+                <p className="text-text-secondary text-sm md:text-base text-center max-w-[500px] mb-10 leading-relaxed">
+                  Your premium multi-agent assistant for document analysis, general knowledge, and real-time web search.
+                </p>
+
+                {/* Responsive 3-Column Glassmorphic Feature Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mb-10">
+                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
+                    <div className="text-3xl mb-3 text-emerald-400">📄</div>
+                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">Document RAG</h3>
+                    <p className="text-text-muted text-[12px] leading-relaxed">
+                      Upload PDFs to your knowledge base to query their contents.
+                    </p>
+                  </div>
+                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
+                    <div className="text-3xl mb-3 text-purple-400">🧠</div>
+                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">General Knowledge</h3>
+                    <p className="text-text-muted text-[12px] leading-relaxed">
+                      Ask questions, debug code, or brainstorm ideas using LLMs.
+                    </p>
+                  </div>
+                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
+                    <div className="text-3xl mb-3 text-amber-400">🌐</div>
+                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">Real-Time Search</h3>
+                    <p className="text-text-muted text-[12px] leading-relaxed">
+                      Search the web automatically to fetch live info.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Clickable Quick-Start Prompts */}
+                <div className="w-full max-w-[640px]">
+                  <p className="text-[11px] font-semibold text-text-muted uppercase tracking-[0.08em] text-center mb-3">
+                    Suggested Starter Prompts
+                  </p>
+                  <div className="flex flex-wrap gap-2.5 justify-center">
+                    {[
+                      "Explain how multi-agent RAG architectures work",
+                      "What are some interesting use cases for AI?",
+                      "Search the web for the latest artificial intelligence headlines",
+                    ].map((promptText, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          handleSend(promptText);
+                        }}
+                        className="px-4 py-2 bg-bg-elevated/40 hover:bg-accent-soft/30 hover:text-text-primary hover:border-border-accent border border-border text-[12px] text-text-secondary rounded-full cursor-pointer transition-all duration-200"
+                      >
+                        {promptText} →
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {messages.map((msg) => (
+                  <ChatMessage key={msg.id} message={msg} />
+                ))}
+                <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
         </div>
 
         {/* Input area */}
-        <div
-          style={{
-            padding: "16px 20px 20px",
-            background: "var(--bg-surface)",
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ maxWidth: "760px", margin: "0 auto" }}>
+        <div className="px-5 pt-2 pb-5 bg-bg-base shrink-0">
+          <div className="max-w-[760px] mx-auto">
             <ChatInput
               value={input}
               onChange={setInput}
               onSend={handleSend}
               isLoading={isLoading}
-              placeholder={
-                documents.length > 0
-                  ? "Ask about your documents, or anything else…"
-                  : "Ask me anything — I'll use web search for current info…"
-              }
+              hasDocuments={documents.length > 0}
+              placeholder="Ask anything..."
             />
-            <p style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-muted)", textAlign: "center" }}>
-              Enter to send · Shift+Enter for newline · Powered by Groq · Qdrant · Tavily
+            <p className="mt-2 text-[11px] text-text-muted text-center">
+              Enter to send · Shift+Enter for newline
             </p>
           </div>
         </div>

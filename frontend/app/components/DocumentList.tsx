@@ -27,17 +27,10 @@ export default function DocumentList({ documents, sessionId, onDeleted }: Docume
 
   if (documents.length === 0) {
     return (
-      <div
-        style={{
-          textAlign: "center",
-          padding: "20px 12px",
-          color: "var(--text-muted)",
-          fontSize: "13px",
-        }}
-      >
-        <p style={{ fontSize: "24px", marginBottom: "6px" }}>🗂️</p>
+      <div className="text-center px-3 py-5 text-text-muted text-[13px]">
+        <p className="text-[24px] mb-1.5">🗂️</p>
         <p>No documents uploaded yet</p>
-        <p style={{ fontSize: "11px", marginTop: "4px", color: "var(--text-muted)" }}>
+        <p className="text-[11px] mt-1 text-text-muted">
           Upload a file above to get started
         </p>
       </div>
@@ -45,36 +38,17 @@ export default function DocumentList({ documents, sessionId, onDeleted }: Docume
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+    <div className="flex flex-col gap-1.5">
       {documents.map((doc) => (
         <div
           key={doc}
-          className="fade-in"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "9px 12px",
-            background: "var(--bg-base)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-sm)",
-            transition: "border-color 0.2s",
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+          className="fade-in group flex items-center gap-2.5 px-3 py-2 bg-bg-base border border-border rounded-sm transition-colors duration-200 hover:border-border-hover"
         >
-          <span style={{ fontSize: "14px" }}>
+          <span className="text-[14px]">
             {doc.endsWith(".pdf") ? "📑" : doc.endsWith(".docx") || doc.endsWith(".doc") ? "📝" : "📄"}
           </span>
           <span
-            style={{
-              flex: 1,
-              fontSize: "13px",
-              color: "var(--text-secondary)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+            className="flex-1 text-[13px] text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap"
             title={doc}
           >
             {doc}
@@ -83,23 +57,10 @@ export default function DocumentList({ documents, sessionId, onDeleted }: Docume
             onClick={() => handleDelete(doc)}
             disabled={deleting === doc}
             aria-label={`Delete ${doc}`}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-muted)",
-              padding: "2px 4px",
-              borderRadius: "4px",
-              display: "flex",
-              alignItems: "center",
-              transition: "color 0.2s",
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "#f87171"; }}
-            onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "var(--text-muted)"; }}
+            className="bg-transparent border-none cursor-pointer text-text-muted px-1 py-0.5 rounded flex items-center transition-colors duration-200 shrink-0 hover:text-red-400 disabled:cursor-not-allowed"
           >
             {deleting === doc ? (
-              <div className="spinner" style={{ width: "12px", height: "12px" }} />
+              <div className="spinner w-3 h-3" />
             ) : (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <polyline points="3 6 5 6 21 6" />

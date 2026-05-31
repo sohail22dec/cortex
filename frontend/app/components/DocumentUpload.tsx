@@ -61,21 +61,9 @@ export default function DocumentUpload({
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "8px",
-          padding: "24px 16px",
-          border: `2px dashed ${isDragOver ? "var(--accent-primary)" : "var(--border)"}`,
-          borderRadius: "var(--radius-md)",
-          background: isDragOver ? "var(--accent-soft)" : "var(--bg-base)",
-          cursor: isUploading ? "not-allowed" : "pointer",
-          transition: "all 0.2s",
-          textAlign: "center",
-          userSelect: "none",
-        }}
+        className={`group flex flex-col items-center justify-center gap-2 px-4 py-6 rounded-md transition-all duration-200 text-center select-none border-2 border-dashed ${
+          isDragOver ? "border-accent-primary bg-accent-soft" : "border-border bg-bg-base hover:border-border-hover"
+        } ${isUploading ? "cursor-not-allowed" : "cursor-pointer"}`}
       >
         <input
           id="file-input"
@@ -83,37 +71,24 @@ export default function DocumentUpload({
           accept=".pdf,.docx,.doc,.txt,.md,.rst"
           onChange={(e) => handleFiles(e.target.files)}
           disabled={isUploading}
-          style={{ display: "none" }}
+          className="hidden"
         />
 
         {isUploading ? (
           <>
             <div className="spinner" />
-            <span style={{ fontSize: "13px", color: "var(--text-muted)" }}>Indexing…</span>
+            <span className="text-[13px] text-text-muted">Indexing…</span>
           </>
         ) : (
           <>
-            <div
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--accent-soft)",
-                border: "1px solid var(--border-accent)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "18px",
-                transition: "transform 0.2s",
-              }}
-            >
+            <div className="w-10 h-10 rounded-sm bg-accent-soft border border-border-accent flex items-center justify-center text-[18px] transition-transform duration-200 group-hover:scale-105">
               📁
             </div>
             <div>
-              <p style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-secondary)" }}>
-                Drop file or <span style={{ color: "var(--accent-primary)" }}>click to browse</span>
+              <p className="text-[13px] font-medium text-text-secondary">
+                Drop file or <span className="text-accent-primary">click to browse</span>
               </p>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+              <p className="text-[11px] text-text-muted mt-0.5">
                 PDF, DOCX, TXT, MD — up to 20 MB
               </p>
             </div>
@@ -122,17 +97,7 @@ export default function DocumentUpload({
       </label>
 
       {error && (
-        <div
-          style={{
-            marginTop: "8px",
-            padding: "8px 12px",
-            background: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            borderRadius: "var(--radius-sm)",
-            fontSize: "12px",
-            color: "#f87171",
-          }}
-        >
+        <div className="mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-sm text-[12px] text-red-400">
           ⚠️ {error}
         </div>
       )}
