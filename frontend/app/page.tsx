@@ -40,7 +40,9 @@ export default function Home() {
   const [userId, setUserId] = useState("ssr");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  
+  const activeChatIdRef = useRef(activeChatId);
+  activeChatIdRef.current = activeChatId;
+
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [documents, setDocuments] = useState<string[]>([]);
@@ -79,8 +81,8 @@ export default function Home() {
   // Session state updates
   const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
     setSessions((prevSessions) => {
-      let activeIdx = prevSessions.findIndex((s) => s.id === activeChatId);
-      
+      let activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
+
       let updatedSession: ChatSession;
       if (activeIdx === -1) {
         // Create new session lazily
@@ -99,19 +101,19 @@ export default function Home() {
         const session = prevSessions[activeIdx];
         const updatedMsgs = typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
         updatedSession = { ...session, messages: updatedMsgs };
-        
+
         // Update title if first message
         if (session.messages.length === 0 && updatedMsgs.length > 0 && updatedMsgs[0].role === "user") {
           updatedSession.title = updatedMsgs[0].content.slice(0, 30) + "...";
         }
-        
+
         const updated = [...prevSessions];
         updated[activeIdx] = updatedSession;
         saveSessions(updated);
         return updated;
       }
     });
-  }, [activeChatId]);
+  }, [activeChatIdRef]);
 
   const createNewChat = useCallback(() => {
     const newId = crypto.randomUUID();
@@ -194,27 +196,11 @@ export default function Home() {
 
   const handleDocumentUploaded = useCallback((filename: string, chunks: number) => {
     setDocuments((prev) => prev.includes(filename) ? prev : [...prev, filename]);
-    const notice: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `✅ **"${filename}"** has been indexed to your global knowledge base.`,
-      source: "rag",
-      citations: [],
-    };
-    setMessages((prev) => [...prev, notice]);
-  }, [setMessages]);
+  }, []);
 
   const handleDocumentDeleted = useCallback((filename: string) => {
     setDocuments((prev) => prev.filter((d) => d !== filename));
-    const notice: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `🗑️ **"${filename}"** has been removed from your global knowledge base.`,
-      source: "llm",
-      citations: [],
-    };
-    setMessages((prev) => [...prev, notice]);
-  }, [setMessages]);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-base">
@@ -226,7 +212,7 @@ export default function Home() {
         setIsUploading={setIsUploading}
         onDocumentUploaded={handleDocumentUploaded}
         onDocumentDeleted={handleDocumentDeleted}
-        
+
         sessions={sessions}
         activeChatId={activeChatId}
         onSelectChat={setActiveChatId}
@@ -237,30 +223,35 @@ export default function Home() {
       {/* ── Main chat area ────────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex items-center gap-3 px-5 py-3.5 bg-bg-surface border-b border-border shrink-0">
-          <button
-            id="toggle-sidebar"
-            onClick={() => setSidebarOpen((o) => !o)}
-            aria-label="Toggle sidebar"
-            className="group flex items-center p-1 rounded-sm bg-transparent border-none text-text-muted cursor-pointer transition-colors hover:text-text-primary"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
+        <header className="flex items-center justify-between px-5 py-3 bg-bg-base/80 backdrop-blur-md border-b border-border/50 shrink-0 sticky top-0 z-50">
+          <div className="flex items-center z-10">
+            <button
+              id="toggle-sidebar"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label="Toggle sidebar"
+              className="group flex items-center p-1.5 rounded-md bg-transparent border border-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          </div>
 
-          <div className="flex-1">
-            <h2 className="text-[14px] font-semibold text-text-primary">
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5 z-0">
+            <h2 className="text-[14px] font-medium text-text-primary truncate max-w-[200px] md:max-w-[400px]">
               {activeSession ? activeSession.title : "New Chat"}
             </h2>
-            <p className="text-[11px] text-text-muted">
+            <div className="h-3.5 w-[1px] bg-border/80"></div>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent-soft border border-border-accent/30 text-[10px] text-accent-primary font-medium tracking-wide">
               {documents.length > 0
-                ? `${documents.length} document${documents.length > 1 ? "s" : ""} globally indexed`
-                : "No documents indexed — AI will use general knowledge"}
-            </p>
+                ? `📚 ${documents.length} Docs Indexed`
+                : '🧠 Base Knowledge'}
+            </span>
           </div>
+
+          <div className="w-[30px] z-10" /> {/* Spacer to balance the flex-between layout */}
         </header>
 
         {/* Messages */}
@@ -351,8 +342,8 @@ export default function Home() {
               hasDocuments={documents.length > 0}
               placeholder="Ask anything..."
             />
-            <p className="mt-2 text-[11px] text-text-muted text-center">
-              Enter to send · Shift+Enter for newline
+            <p className="mt-2.5 text-[11px] text-text-muted/60 text-center tracking-wide">
+              Cortex can make mistakes. Verify important info.
             </p>
           </div>
         </div>

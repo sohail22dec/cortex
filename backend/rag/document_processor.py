@@ -1,6 +1,6 @@
 """
 Document processor — parses PDF, DOCX, and TXT files,
-splits them into chunks, and indexes them into Qdrant via fastembed.
+splits them into chunks, and indexes them into Supabase via Gemini embeddings.
 """
 from __future__ import annotations
 
@@ -36,7 +36,14 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> List[str]:
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = end - overlap
+            
+        next_start = end - overlap
+        # Prevent infinite loops if a separator was found very close to the start
+        if next_start <= start:
+            start = end
+        else:
+            start = next_start
+            
     return chunks
 
 

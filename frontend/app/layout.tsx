@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "Cortex — Multi-Agent RAG Assistant",
   description:
     "Upload your documents and ask questions. Cortex intelligently routes your queries across RAG, direct LLM knowledge, and real-time web search.",
-  keywords: ["RAG", "AI", "document assistant", "multi-agent", "Groq", "Qdrant"],
+  keywords: ["RAG", "AI", "document assistant", "multi-agent", "Groq", "Supabase"],
 };
 
 export default function RootLayout({

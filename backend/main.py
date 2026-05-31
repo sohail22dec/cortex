@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Cortex API",
-    description="Multi-Agent RAG Application — powered by Groq, Qdrant & Tavily",
+    description="Multi-Agent RAG Application — powered by Groq, Supabase & Tavily",
     version="1.0.0",
 )
 

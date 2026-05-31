@@ -1,5 +1,5 @@
 """
-RAG Agent — retrieves relevant document chunks from the user's Qdrant collection
+RAG Agent — retrieves relevant document chunks from the user's Supabase collection
 and uses Groq to synthesise an answer with citations.
 """
 from __future__ import annotations
