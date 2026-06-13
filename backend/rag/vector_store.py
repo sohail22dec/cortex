@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import List
 
 from supabase import create_client, Client
 
@@ -44,7 +43,7 @@ def _get_client() -> Client:
 
 # ── Document operations ───────────────────────────────────────────────────────
 
-def add_documents(session_id: str, chunks: List[dict]) -> None:
+def add_documents(session_id: str, chunks: list[dict]) -> None:
     """
     Embed and store chunks in Supabase pgvector.
     chunks: list of {"text": str, "source": str}
@@ -78,7 +77,7 @@ def add_documents(session_id: str, chunks: List[dict]) -> None:
 
 def similarity_search(
     session_id: str, query: str, k: int = config.TOP_K_RESULTS
-) -> List[dict]:
+) -> list[dict]:
     """
     Return the top-k most relevant chunks for a query.
     Returns list of {"text": str, "source": str}
@@ -92,13 +91,19 @@ def similarity_search(
     # Step 1: Embed the query in the cloud
     query_vector = emb.embed_query(query)
 
+    # Ensure match_count has a safe integer fallback for client.rpc
+    try:
+        match_count = int(k)
+    except (TypeError, ValueError):
+        match_count = 5
+
     # Step 2: Call the pgvector similarity search RPC function
     response = client.rpc(
         "match_document_chunks",
         {
             "query_embedding": query_vector,
             "match_threshold": config.SIMILARITY_THRESHOLD,
-            "match_count": k,
+            "match_count": match_count,
             "filter_session_id": session_id,
         },
     ).execute()
@@ -125,7 +130,7 @@ def has_documents(session_id: str) -> bool:
     return (response.count or 0) > 0
 
 
-def list_document_names(session_id: str) -> List[str]:
+def list_document_names(session_id: str) -> list[str]:
     """Return a sorted list of unique document filenames for this session."""
     client = _get_client()
     response = (
