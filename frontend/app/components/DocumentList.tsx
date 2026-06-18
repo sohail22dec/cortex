@@ -1,6 +1,8 @@
 "use client";
 import React, { useState } from "react";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 interface DocumentListProps {
   documents: string[];
   sessionId: string;
@@ -14,7 +16,7 @@ export default function DocumentList({ documents, sessionId, onDeleted }: Docume
     setDeleting(filename);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/documents/${encodeURIComponent(filename)}?session_id=${sessionId}`,
+        `${API_URL}/api/documents/${encodeURIComponent(filename)}?session_id=${sessionId}`,
         { method: "DELETE" }
       );
       if (res.ok) onDeleted(filename);

@@ -1,4 +1,5 @@
 import logging
+import os
 
 import uvicorn
 from fastapi import FastAPI
@@ -20,9 +21,18 @@ app = FastAPI(
 )
 
 # ── CORS (Next.js frontend) ───────────────────────────────────────────────────
+origins = [
+    "http://localhost:3000",
+    "https://cortex-lime-zeta.vercel.app",
+]
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    for url in frontend_url.split(","):
+        origins.append(url.strip().rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

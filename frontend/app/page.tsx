@@ -36,6 +36,8 @@ function saveSessions(sessions: ChatSession[]) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Home() {
   const [userId, setUserId] = useState("ssr");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -63,7 +65,7 @@ export default function Home() {
   // Load documents for this user (global knowledge base)
   useEffect(() => {
     if (userId === "ssr") return;
-    fetch(`http://localhost:8000/api/documents?session_id=${userId}`)
+    fetch(`${API_URL}/api/documents?session_id=${userId}`)
       .then((r) => r.json())
       .then((d) => setDocuments(d.documents || []))
       .catch(() => { });
@@ -162,7 +164,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/api/chat", {
+      const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Passing userId as session_id allows backend to access the global knowledge base!

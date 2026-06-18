@@ -1,6 +1,8 @@
 "use client";
 import React, { useCallback, useState } from "react";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 interface DocumentUploadProps {
   sessionId: string;
   onUploaded: (filename: string, chunks: number) => void;
@@ -26,7 +28,7 @@ export default function DocumentUpload({
       form.append("session_id", sessionId);
 
       try {
-        const res = await fetch("http://localhost:8000/api/documents/upload", {
+        const res = await fetch(`${API_URL}/api/documents/upload`, {
           method: "POST",
           body: form,
         });
