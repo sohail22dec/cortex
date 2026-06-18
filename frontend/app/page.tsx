@@ -194,7 +194,7 @@ export default function Home() {
     }
   }, [input, isLoading, userId, setMessages]);
 
-  const handleDocumentUploaded = useCallback((filename: string, chunks: number) => {
+  const handleDocumentUploaded = useCallback((filename: string) => {
     setDocuments((prev) => prev.includes(filename) ? prev : [...prev, filename]);
   }, []);
 
