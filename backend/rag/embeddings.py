@@ -4,40 +4,34 @@ Embeddings — generates text embeddings using Google Gemini's
 """
 from __future__ import annotations
 
-import logging
-
-from langchain_google_genai import GoogleGenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 import config
 
-logger = logging.getLogger(__name__)
-
 # Singleton Gemini clients for different task types
-_document_client: GoogleGenAIEmbeddings | None = None
-_query_client: GoogleGenAIEmbeddings | None = None
+_document_client: GoogleGenerativeAIEmbeddings | None = None
+_query_client: GoogleGenerativeAIEmbeddings | None = None
 
 
-def _get_document_client() -> GoogleGenAIEmbeddings:
+def _get_document_client() -> GoogleGenerativeAIEmbeddings:
     global _document_client
     if _document_client is None:
-        _document_client = GoogleGenAIEmbeddings(
+        _document_client = GoogleGenerativeAIEmbeddings(
             model=config.GEMINI_EMBEDDING_MODEL,
             google_api_key=config.GEMINI_API_KEY,
             task_type="RETRIEVAL_DOCUMENT"
         )
-        logger.info("LangChain Gemini document embeddings client initialised (model: %s)", config.GEMINI_EMBEDDING_MODEL)
     return _document_client
 
 
-def _get_query_client() -> GoogleGenAIEmbeddings:
+def _get_query_client() -> GoogleGenerativeAIEmbeddings:
     global _query_client
     if _query_client is None:
-        _query_client = GoogleGenAIEmbeddings(
+        _query_client = GoogleGenerativeAIEmbeddings(
             model=config.GEMINI_EMBEDDING_MODEL,
             google_api_key=config.GEMINI_API_KEY,
             task_type="RETRIEVAL_QUERY"
         )
-        logger.info("LangChain Gemini query embeddings client initialised (model: %s)", config.GEMINI_EMBEDDING_MODEL)
     return _query_client
 
 
@@ -48,7 +42,6 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     client = _get_document_client()
     embeddings = client.embed_documents(texts)
-    logger.info("Embedded %d text chunks via LangChain", len(embeddings))
     return embeddings
 
 
@@ -59,5 +52,4 @@ def embed_query(query: str) -> list[float]:
     """
     client = _get_query_client()
     embedding = client.embed_query(query)
-    logger.info("Embedded search query via LangChain")
     return embedding

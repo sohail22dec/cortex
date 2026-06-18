@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, cast
 
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _router_llm = ChatGroq(
     model=config.GROQ_MODEL,
     api_key=config.GROQ_API_KEY,
-    temperature=0,  # deterministic routing
+    temperature=0,
 )
 
 # ── State schema ──────────────────────────────────────────────────────────────
@@ -110,17 +110,17 @@ def router_node(state: AgentState) -> AgentState:
 
 def rag_node(state: AgentState) -> AgentState:
     result = rag_agent.run(state["session_id"], state["question"])
-    return {**state, **result}
+    return cast(AgentState, {**state, **result})
 
 
 def llm_node(state: AgentState) -> AgentState:
     result = llm_agent.run(state["question"])
-    return {**state, **result}
+    return cast(AgentState, {**state, **result})
 
 
 def web_search_node(state: AgentState) -> AgentState:
     result = web_search_agent.run(state["question"])
-    return {**state, **result}
+    return cast(AgentState, {**state, **result})
 
 
 # ── Conditional edge ──────────────────────────────────────────────────────────
