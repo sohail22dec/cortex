@@ -38,18 +38,18 @@ def _get_query_client() -> GoogleGenerativeAIEmbeddings:
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     Generate embeddings for a list of text chunks (for indexing documents).
-    Returns a list of 768-dimensional float vectors.
+    Returns a list of 768-dimensional float vectors (MRL truncated).
     """
     client = _get_document_client()
     embeddings = client.embed_documents(texts)
-    return embeddings
+    return [vec[:768] for vec in embeddings]
 
 
 def embed_query(query: str) -> list[float]:
     """
     Generate an embedding for a single search query.
-    Returns a single 768-dimensional float vector.
+    Returns a single 768-dimensional float vector (MRL truncated).
     """
     client = _get_query_client()
     embedding = client.embed_query(query)
-    return embedding
+    return embedding[:768]

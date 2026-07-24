@@ -178,6 +178,8 @@ export default function Home() {
         content: data.answer || "Sorry, something went wrong.",
         source: data.source,
         citations: data.citations || [],
+        suggest_web_search: data.suggest_web_search || false,
+        question: question,
       };
 
       setMessages((prev) =>
@@ -195,6 +197,10 @@ export default function Home() {
       setIsLoading(false);
     }
   }, [input, isLoading, userId, setMessages]);
+
+  const handleWebSearchFallback = useCallback((question: string) => {
+    handleSend(`Search the web for ${question}`);
+  }, [handleSend]);
 
   const handleDocumentUploaded = useCallback((filename: string) => {
     setDocuments((prev) => prev.includes(filename) ? prev : [...prev, filename]);
@@ -325,7 +331,7 @@ export default function Home() {
             ) : (
               <>
                 {messages.map((msg) => (
-                  <ChatMessage key={msg.id} message={msg} />
+                  <ChatMessage key={msg.id} message={msg} onWebSearchFallback={handleWebSearchFallback} />
                 ))}
                 <div ref={messagesEndRef} />
               </>

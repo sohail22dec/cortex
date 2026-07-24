@@ -26,6 +26,7 @@ class ChatResponse(BaseModel):
     source: str          # "rag" | "llm" | "web_search"
     citations: list[str]
     route: str
+    suggest_web_search: bool = False
 
 
 @router.post("/chat", response_model=ChatResponse)

@@ -9,10 +9,13 @@ export interface Message {
   source?: "rag" | "llm" | "web_search";
   citations?: string[];
   isLoading?: boolean;
+  suggest_web_search?: boolean;
+  question?: string;
 }
 
 interface ChatMessageProps {
   message: Message;
+  onWebSearchFallback?: (question: string) => void;
 }
 
 function formatContent(text: string): React.ReactNode {
@@ -22,7 +25,6 @@ function formatContent(text: string): React.ReactNode {
 
   let inCodeBlock = false;
   let codeLines: string[] = [];
-  let codeLanguage = "";
 
   const flushCode = (key: string) => {
     elements.push(
@@ -34,7 +36,6 @@ function formatContent(text: string): React.ReactNode {
       </pre>
     );
     codeLines = [];
-    codeLanguage = "";
   };
 
   lines.forEach((line, i) => {
@@ -44,7 +45,6 @@ function formatContent(text: string): React.ReactNode {
         inCodeBlock = false;
       } else {
         inCodeBlock = true;
-        codeLanguage = line.slice(3).trim();
       }
       return;
     }
@@ -53,7 +53,6 @@ function formatContent(text: string): React.ReactNode {
       return;
     }
 
-    // Headings
     if (line.startsWith("### ")) {
       elements.push(<h3 key={i} className="text-[15px] font-semibold mt-3 mb-1 text-text-primary">{line.slice(4)}</h3>);
     } else if (line.startsWith("## ")) {
@@ -83,7 +82,6 @@ function formatContent(text: string): React.ReactNode {
 }
 
 function renderInline(text: string): React.ReactNode {
-  // Handle **bold** and `code`
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
@@ -100,7 +98,7 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, onWebSearchFallback }: ChatMessageProps) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -116,10 +114,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     );
   }
 
-  // Assistant message
   return (
     <div className="fade-in flex gap-3 mb-5 items-start">
-      {/* Avatar */}
       <div
         className="w-8 h-8 rounded-full flex items-center justify-center text-[14px] shrink-0 shadow-[0_0_12px_var(--color-accent-glow)]"
         style={{ background: "linear-gradient(135deg, var(--color-accent-primary), #6366f1)" }}
@@ -128,7 +124,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       </div>
 
       <div className="flex-1 min-w-0">
-        {/* Header row */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[13px] font-semibold text-text-secondary">Cortex</span>
           {message.source && !message.isLoading && (
@@ -136,7 +131,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           )}
         </div>
 
-        {/* Content */}
         <div className="bg-bg-surface border border-border rounded-[4px_var(--radius-lg)_var(--radius-lg)_var(--radius-lg)] px-4 py-3.5 text-[14px] leading-[1.7] shadow-sm">
           {message.isLoading ? (
             <div className="flex items-center gap-2.5">
@@ -147,6 +141,18 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             formatContent(message.content)
           )}
         </div>
+
+        {/* Web Search Fallback Action Button */}
+        {!message.isLoading && message.suggest_web_search && message.question && onWebSearchFallback && (
+          <div className="mt-2.5">
+            <button
+              onClick={() => onWebSearchFallback(message.question!)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 text-xs font-medium border border-indigo-500/20 transition-all cursor-pointer shadow-sm hover:scale-[1.01]"
+            >
+              🌐 Search the web for &quot;{message.question}&quot;
+            </button>
+          </div>
+        )}
 
         {/* Citations */}
         {!message.isLoading && message.citations && message.citations.length > 0 && (
