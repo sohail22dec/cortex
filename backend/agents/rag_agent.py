@@ -64,10 +64,6 @@ def build_context(chunks: List[dict]) -> str:
 
 
 def grade_chunks(question: str, chunks: List[dict]) -> Tuple[List[dict], bool]:
-    """
-    [IsRel Evaluator] Grade each retrieved chunk for relevance to the question.
-    Returns (filtered_chunks, has_relevant).
-    """
     if not chunks:
         return [], False
 
@@ -96,10 +92,6 @@ def grade_chunks(question: str, chunks: List[dict]) -> Tuple[List[dict], bool]:
             filtered_chunks.append(chunk)
 
     has_relevant = len(filtered_chunks) > 0
-    logger.info(
-        "IsRel Evaluator | Total chunks: %d | Relevant chunks: %d",
-        len(chunks), len(filtered_chunks),
-    )
     return filtered_chunks, has_relevant
 
 
@@ -117,10 +109,6 @@ def generate_answer(question: str, chunks: List[dict], strict: bool = False) -> 
 
 
 def grade_groundedness(question: str, context: str, answer: str) -> bool:
-    """
-    [IsSup Evaluator] Verify if all claims in the generated answer are grounded in context.
-    Returns True if grounded, False if hallucinated.
-    """
     system_msg = SystemMessage(
         content=(
             "You are a hallucination grader. Evaluate whether the AI answer is strictly "
@@ -170,32 +158,4 @@ def grade_utility(question: str, answer: str) -> bool:
         logger.warning("Error grading utility: %s. Defaulting to True.", e)
         is_useful = True
 
-    logger.info("IsUse Evaluator | Useful: %s", is_useful)
     return is_useful
-
-
-def run(session_id: str, question: str) -> Dict[str, Any]:
-    """Retrieve relevant chunks and run simple RAG (legacy endpoint fallback)."""
-    logger.info("RAG Agent | session=%s | question: %s", session_id, question[:80])
-
-    chunks = vs.similarity_search(session_id, question, k=config.TOP_K_RESULTS)
-    if not chunks:
-        return {
-            "answer": (
-                "I couldn't find relevant information in your uploaded documents for this question."
-            ),
-            "source": "rag",
-            "citations": [],
-        }
-
-    filtered_chunks, has_relevant = grade_chunks(question, chunks)
-    target_chunks = filtered_chunks if has_relevant else chunks
-    answer = generate_answer(question, target_chunks)
-    sources = list({c.get("source", "Unknown") for c in target_chunks})
-
-    return {
-        "answer": answer,
-        "source": "rag",
-        "citations": sources,
-    }
-

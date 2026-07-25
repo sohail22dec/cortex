@@ -1,6 +1,3 @@
-"""
-Graph Nodes — Pure node functions for the Cortex LangGraph state machine.
-"""
 from __future__ import annotations
 
 import logging
@@ -17,7 +14,6 @@ logger = logging.getLogger(__name__)
 # ── Intelligent Router Node ───────────────────────────────────────────────────
 
 def router_node(state: AgentState) -> AgentState:
-    """Classify user question using intelligent router_agent."""
     question = state["question"]
     has_documents = state["has_documents"]
     doc_names = state.get("document_names", [])
@@ -29,17 +25,14 @@ def router_node(state: AgentState) -> AgentState:
 # ── RAG Pipeline Nodes (Self-RAG / CRAG) ──────────────────────────────────────
 
 def retrieve_node(state: AgentState) -> AgentState:
-    """Fetch vector chunks from Supabase."""
     session_id = state["session_id"]
     question = state["question"]
-    logger.info("Retrieve Node | session=%s | question=%s", session_id, question[:80])
 
     chunks = vs.similarity_search(session_id, question, k=config.TOP_K_RESULTS)
     return {**state, "chunks": chunks}
 
 
 def grade_documents_node(state: AgentState) -> AgentState:
-    """[IsRel Node] Filter out irrelevant chunks using rag_agent evaluator."""
     question = state["question"]
     chunks = state.get("chunks", [])
 
@@ -52,8 +45,6 @@ def grade_documents_node(state: AgentState) -> AgentState:
 
 
 def suggest_web_search_node(state: AgentState) -> AgentState:
-    """Triggered when 0 document chunks are relevant. Offers web search prompt."""
-    logger.info("Suggest Web Search Node | No relevant chunks found.")
     answer = (
         "I couldn't find relevant information in your uploaded documents for this question.\n\n"
         "Would you like me to search the web for you?"
@@ -68,13 +59,11 @@ def suggest_web_search_node(state: AgentState) -> AgentState:
 
 
 def generate_node(state: AgentState) -> AgentState:
-    """Synthesize answer from filtered relevant chunks."""
     question = state["question"]
     filtered_chunks = state.get("filtered_chunks", [])
     retry_count = state.get("retry_count", 0)
 
     strict_mode = retry_count > 0
-    logger.info("Generate Node | strict_mode=%s | retry_count=%d", strict_mode, retry_count)
 
     answer = rag_agent.generate_answer(question, filtered_chunks, strict=strict_mode)
     sources = list({c.get("source", "Unknown") for c in filtered_chunks})
@@ -84,6 +73,7 @@ def generate_node(state: AgentState) -> AgentState:
         "answer": answer,
         "source": "rag",
         "citations": sources,
+        "retry_count": retry_count + 1,
     }
 
 
@@ -108,8 +98,6 @@ def grade_utility_node(state: AgentState) -> AgentState:
 
 
 def partial_answer_node(state: AgentState) -> AgentState:
-    """Triggered when answer is incomplete. Appends note + suggests web search."""
-    logger.info("Partial Answer Node | Answer judged incomplete.")
     current_answer = state.get("answer", "")
     note = (
         "\n\n---\n*Note: The uploaded documents only partially answer your question. "
@@ -125,12 +113,10 @@ def partial_answer_node(state: AgentState) -> AgentState:
 # ── Direct LLM & Web Search Nodes ─────────────────────────────────────────────
 
 def llm_node(state: AgentState) -> AgentState:
-    """Direct LLM response for general knowledge questions."""
     result = llm_agent.run(state["question"])
     return cast(AgentState, {**state, **result, "suggest_web_search": False})
 
 
 def web_search_node(state: AgentState) -> AgentState:
-    """Web search response using Tavily."""
     result = web_search_agent.run(state["question"])
     return cast(AgentState, {**state, **result, "suggest_web_search": False})

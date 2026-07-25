@@ -115,10 +115,6 @@ _graph = _build_graph()
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def run(session_id: str, question: str) -> Dict[str, Any]:
-    """
-    Route the question through the Intelligent Router state graph and return the result.
-    Returns: { answer, source, citations, route, suggest_web_search }
-    """
     try:
         has_docs = vs.has_documents(session_id)
         doc_names = vs.list_document_names(session_id) if has_docs else []
