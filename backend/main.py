@@ -1,5 +1,4 @@
 import logging
-import os
 
 import uvicorn
 from fastapi import FastAPI
@@ -25,10 +24,6 @@ origins = [
     "http://localhost:3000",
     "https://cortex-lime-zeta.vercel.app",
 ]
-frontend_url = os.getenv("FRONTEND_URL")
-if frontend_url:
-    for url in frontend_url.split(","):
-        origins.append(url.strip().rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,

@@ -16,7 +16,7 @@ import config
 logger = logging.getLogger(__name__)
 
 _llm = ChatGroq(
-    model=config.GROQ_MODEL,
+    model=config.GROQ_REASONING_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.5,
 )
@@ -39,9 +39,6 @@ def _format_results(results: List[Dict]) -> str:
 
 
 def run(question: str) -> Dict[str, Any]:
-    """Search the web with Tavily and answer using Groq."""
-    logger.info("Web Search Agent | question: %s", question[:80])
-
     client = TavilyClient(api_key=config.TAVILY_API_KEY)
 
     try:

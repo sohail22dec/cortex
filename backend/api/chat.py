@@ -1,7 +1,3 @@
-"""
-Chat API — POST /api/chat
-Accepts a message + session_id and returns an AI-generated answer.
-"""
 from __future__ import annotations
 
 import logging
@@ -23,7 +19,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    source: str          # "rag" | "llm" | "web_search"
+    source: str
     citations: list[str]
     route: str
     suggest_web_search: bool = False
@@ -31,10 +27,6 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """
-    Send a message and receive an AI response.
-    The orchestrator automatically decides which agent to use.
-    """
     try:
         result = orchestrator.run(
             session_id=request.session_id,

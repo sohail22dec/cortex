@@ -1,7 +1,3 @@
-"""
-Document processor — parses PDF, DOCX, and TXT files,
-splits them into chunks, and indexes them into Supabase via Gemini embeddings.
-"""
 from __future__ import annotations
 
 import logging
@@ -21,10 +17,6 @@ logger = logging.getLogger(__name__)
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def process_and_index(session_id: str, file_bytes: bytes, filename: str) -> int:
-    """
-    Parse, chunk, and index a document for a session.
-    Returns the number of chunks indexed.
-    """
     suffix = os.path.splitext(filename)[1].lower()
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(file_bytes)
@@ -54,8 +46,5 @@ def process_and_index(session_id: str, file_bytes: bytes, filename: str) -> int:
 
     # Build dict chunks for the vector store
     chunks = [{"text": doc.page_content, "source": filename} for doc in split_docs]
-
-    logger.info("Session %s | '%s' → %d chunks", session_id, filename, len(chunks))
-
     vs.add_documents(session_id, chunks)
     return len(chunks)

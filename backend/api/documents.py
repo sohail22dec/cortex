@@ -1,6 +1,3 @@
-"""
-Documents API — upload, list, and delete documents for a session.
-"""
 from __future__ import annotations
 
 import logging
@@ -38,7 +35,6 @@ async def upload_document(
     file: UploadFile = File(...),
     session_id: str = Form(...),
 ):
-    """Upload and index a document for a session."""
     import os
 
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -79,15 +75,13 @@ async def upload_document(
 
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(session_id: str):
-    """List all documents indexed for a session."""
     docs = vs.list_document_names(session_id)
     return DocumentListResponse(session_id=session_id, documents=docs)
 
 
 @router.delete("/documents/{filename}", response_model=DeleteResponse)
 async def delete_document(filename: str, session_id: str):
-    """Remove a document from the session's vector store."""
-    if not vs.collection_exists(session_id):
+    if not vs.has_documents(session_id):
         raise HTTPException(status_code=404, detail="No documents found for this session")
 
     vs.delete_document(session_id, filename)

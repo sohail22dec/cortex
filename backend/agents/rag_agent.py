@@ -1,7 +1,3 @@
-"""
-RAG Agent — retrieves relevant document chunks, evaluates relevance/groundedness/utility (Self-RAG/CRAG),
-and generates grounded answers with citations.
-"""
 from __future__ import annotations
 
 import json
@@ -16,16 +12,16 @@ from rag import vector_store as vs
 
 logger = logging.getLogger(__name__)
 
-# LLM for generation
+# LLM for generation (flagship reasoning model)
 _llm = ChatGroq(
-    model=config.GROQ_MODEL,
+    model=config.GROQ_REASONING_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.3,
 )
 
-# LLM for evaluation (zero temperature for deterministic JSON responses)
+# LLM for evaluation (ultra-fast 8B instant model)
 _eval_llm = ChatGroq(
-    model=config.GROQ_MODEL,
+    model=config.GROQ_FAST_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 )
@@ -63,7 +59,7 @@ def build_context(chunks: List[dict]) -> str:
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("source", "Unknown")
         text = chunk.get("text", "")
-        parts.append(f"[Excerpt {i} from '{source}']:\n{text}")
+        parts.append(f"[Chunk {i} from '{source}']:\n{text}")
     return "\n\n---\n\n".join(parts)
 
 

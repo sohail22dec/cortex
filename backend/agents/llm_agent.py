@@ -1,7 +1,3 @@
-"""
-LLM Agent — answers general knowledge questions directly from Groq,
-without any retrieval or web search.
-"""
 from __future__ import annotations
 
 import logging
@@ -15,7 +11,7 @@ import config
 logger = logging.getLogger(__name__)
 
 _llm = ChatGroq(
-    model=config.GROQ_MODEL,
+    model=config.GROQ_REASONING_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.7,
 )
@@ -27,9 +23,6 @@ Format your answers in a readable way using markdown where helpful."""
 
 
 def run(question: str) -> Dict[str, Any]:
-    """Answer a general knowledge question directly with the LLM."""
-    logger.info("LLM Agent | question: %s", question[:80])
-
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=question),
