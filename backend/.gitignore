@@ -13,3 +13,9 @@ wheels/
 .env
 qdrant_data/
 
+# LangGraph runtime state
+.langgraph_api/
+.langgraph_ops*
+.langgraph_*
+*.pckl
+
