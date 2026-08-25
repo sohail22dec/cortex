@@ -1,6 +1,10 @@
+"""
+LLM Service — Direct conversational AI response service.
+"""
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict
 
 from langchain_groq import ChatGroq
@@ -22,14 +26,35 @@ If you're unsure, say so honestly rather than guessing.
 Format your answers in a readable way using markdown where helpful."""
 
 
-def run(question: str) -> Dict[str, Any]:
+def _clean_response(text: str) -> str:
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    return cleaned if cleaned else text.strip()
+
+
+async def run_llm_async(question: str) -> Dict[str, Any]:
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=question),
+    ]
+
+    response = await _llm.ainvoke(messages)
+    answer = _clean_response(str(response.content))
+
+    return {
+        "answer": answer,
+        "source": "llm",
+        "citations": [],
+    }
+
+
+def run_llm(question: str) -> Dict[str, Any]:
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=question),
     ]
 
     response = _llm.invoke(messages)
-    answer = response.content
+    answer = _clean_response(str(response.content))
 
     return {
         "answer": answer,

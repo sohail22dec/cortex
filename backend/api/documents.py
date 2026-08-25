@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -35,8 +37,6 @@ async def upload_document(
     file: UploadFile = File(...),
     session_id: str = Form(...),
 ):
-    import os
-
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -55,7 +55,9 @@ async def upload_document(
         )
 
     try:
-        chunks = document_processor.process_and_index(
+        # Offload file parsing and embedding generation to thread pool
+        chunks = await asyncio.to_thread(
+            document_processor.process_and_index,
             session_id=session_id,
             file_bytes=content,
             filename=file.filename or "unknown",
@@ -75,14 +77,16 @@ async def upload_document(
 
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(session_id: str):
-    docs = vs.list_document_names(session_id)
+    docs = await asyncio.to_thread(vs.list_document_names, session_id)
     return DocumentListResponse(session_id=session_id, documents=docs)
 
 
 @router.delete("/documents/{filename}", response_model=DeleteResponse)
 async def delete_document(filename: str, session_id: str):
-    if not vs.has_documents(session_id):
+    has_docs = await asyncio.to_thread(vs.has_documents, session_id)
+    if not has_docs:
         raise HTTPException(status_code=404, detail="No documents found for this session")
 
-    vs.delete_document(session_id, filename)
+    await asyncio.to_thread(vs.delete_document, session_id, filename)
     return DeleteResponse(message=f"Document '{filename}' removed from your session")
+

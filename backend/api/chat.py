@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from agents import orchestrator
+from crag import run_crag_async
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,20 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        result = orchestrator.run(
+        result = await run_crag_async(
             session_id=request.session_id,
             question=request.message,
         )
-        return ChatResponse(**result)
+        return ChatResponse(
+            answer=result.get("answer", ""),
+            source=result.get("source", "llm"),
+            citations=result.get("citations", []),
+            route=result.get("route", "llm"),
+            suggest_web_search=result.get("source") == "web_search",
+        )
     except Exception as e:
         logger.exception("Chat error for session %s", request.session_id)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
