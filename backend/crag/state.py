@@ -22,7 +22,9 @@ class CRAGState(TypedDict):
     db_retry_count: int                 # 0 = initial, 1 = re-retrieved from DB
     
     # Query Transformation & Web Augmentation
-    transformed_query: str              # Search-optimized keyword query
+    transformed_query: str              # Active query being executed
+    db_rewritten_query: str             # Bundled query for vector DB retry
+    web_rewritten_query: str            # Bundled query for Tavily web search
     web_results: List[Dict[str, Any]]   # Results from Tavily web search
     
     # Output & Groundedness
@@ -32,3 +34,4 @@ class CRAGState(TypedDict):
     is_grounded: bool                   # Independent Judge result
     groundedness_reason: str
     groundedness_retry_count: int       # Guard against infinite hallucination retry loops
+

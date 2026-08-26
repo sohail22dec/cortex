@@ -1,6 +1,7 @@
 """
 Evaluator Service — Corrective RAG (CRAG) Retrieval Evaluator.
 Evaluates the quality of retrieved document chunks into CORRECT, INCORRECT, or AMBIGUOUS.
+Also bundles intelligent query rewriting into the same single pass to eliminate redundant LLM calls on retries/fallbacks.
 """
 from __future__ import annotations
 
@@ -29,6 +30,19 @@ class RetrievalEvaluation(BaseModel):
         default_factory=list,
         description="1-based indices of chunks that contain useful relevant facts. Return [] if none are relevant.",
     )
+    rewritten_query_for_db: str = Field(
+        default="",
+        description=(
+            "If INCORRECT, provide a clean, keyword-dense query optimized for a 2nd vector DB retrieval attempt. "
+            "Remove conversational filler, expand pronouns, and focus on core entity/topic terms."
+        ),
+    )
+    rewritten_query_for_web: str = Field(
+        default="",
+        description=(
+            "If INCORRECT (after retry) or AMBIGUOUS, provide a clean search-engine keyword query for Tavily web search."
+        ),
+    )
     reason: str = Field(
         default="",
         description="Brief explanation of the retrieval evaluation decision.",
@@ -45,22 +59,27 @@ _eval_llm = ChatGroq(
 _structured_evaluator_llm = _eval_llm.with_structured_output(RetrievalEvaluation)
 
 
-def _build_evaluation_messages(question: str, chunks: List[dict]) -> list:
+def _build_evaluation_messages(question: str, chunks: List[dict], document_names: List[str] = None) -> list:
     chunks_text = "\n\n".join(
         f"--- Chunk {i} (Source: {chunk.get('source', 'Unknown')}) ---\n{chunk.get('text', '')}"
         for i, chunk in enumerate(chunks, 1)
     )
+    doc_info = f"Uploaded files in session: {document_names}\n" if document_names else ""
     return [
         SystemMessage(
             content=(
-                "You are an expert Retrieval Evaluator for a Corrective RAG (CRAG) pipeline.\n"
+                "You are an expert Retrieval Evaluator & Query Optimizer for a Corrective RAG (CRAG) pipeline.\n"
+                f"{doc_info}"
                 "Carefully evaluate whether the provided document chunks contain relevant, sufficient facts "
                 "to answer the user's question.\n\n"
                 "Classification rules:\n"
                 "- 'CORRECT': The document chunks contain clear, direct facts to answer the question completely.\n"
                 "- 'INCORRECT': The document chunks are off-topic or lack any meaningful information to answer the question.\n"
                 "- 'AMBIGUOUS': The document chunks contain partial information or hints, but are incomplete.\n\n"
-                "Return the 1-based indices of any relevant chunks in 'relevant_chunk_indices'."
+                "Tasks:\n"
+                "1. Return relevant chunk indices in 'relevant_chunk_indices'.\n"
+                "2. If INCORRECT: provide 'rewritten_query_for_db' (optimized for vector search) and 'rewritten_query_for_web'.\n"
+                "3. If AMBIGUOUS: provide 'rewritten_query_for_web' for supplementary search."
             )
         ),
         HumanMessage(
@@ -71,16 +90,19 @@ def _build_evaluation_messages(question: str, chunks: List[dict]) -> list:
 
 async def evaluate_retrieval_async(
     question: str,
-    chunks: List[dict]
-) -> Tuple[Literal["CORRECT", "INCORRECT", "AMBIGUOUS"], List[dict], str]:
+    chunks: List[dict],
+    document_names: List[str] = None,
+) -> Tuple[Literal["CORRECT", "INCORRECT", "AMBIGUOUS"], List[dict], str, str, str]:
     """
-    Asynchronously evaluates retrieved chunks and refines them by removing noise.
-    Returns (evaluation_result, refined_chunks, reason).
+    Asynchronously evaluates retrieved chunks and bundles query rewrites into a SINGLE call.
+    Returns (evaluation_result, refined_chunks, reason, db_query, web_query).
     """
     if not chunks:
-        return "INCORRECT", [], "No chunks retrieved from vector store."
+        # If no chunks at all, prepare clean fallback query
+        fallback_query = question.strip()
+        return "INCORRECT", [], "No chunks retrieved from vector store.", fallback_query, fallback_query
 
-    messages = _build_evaluation_messages(question, chunks)
+    messages = _build_evaluation_messages(question, chunks, document_names)
 
     try:
         result: RetrievalEvaluation = await _structured_evaluator_llm.ainvoke(messages)
@@ -90,14 +112,19 @@ async def evaluate_retrieval_async(
         ]
         evaluation = result.evaluation
         reason = result.reason
+        db_query = result.rewritten_query_for_db.strip() or question
+        web_query = result.rewritten_query_for_web.strip() or question
     except Exception as e:
         logger.warning("CRAG retrieval evaluation error: %s. Defaulting to CORRECT with all chunks.", e)
         evaluation = "CORRECT"
         refined_chunks = list(chunks)
         reason = "fallback"
+        db_query = question
+        web_query = question
 
     # Sanity check: if classified CORRECT but no chunks selected, fall back to AMBIGUOUS or all chunks
     if evaluation == "CORRECT" and not refined_chunks:
         refined_chunks = list(chunks)
 
-    return evaluation, refined_chunks, reason
+    return evaluation, refined_chunks, reason, db_query, web_query
+

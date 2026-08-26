@@ -19,25 +19,29 @@ logger = logging.getLogger(__name__)
 def _build_crag_graph() -> Any:
     graph = StateGraph(CRAGState)
 
-    # 1. Add All CRAG Nodes
+    # 1. Add CRAG Core Nodes
     graph.add_node("router", nodes.router_node)
     graph.add_node("retrieve_node", nodes.retrieve_node)
     graph.add_node("retrieval_eval_node", nodes.retrieval_eval_node)
-    graph.add_node("refine_docs_node", nodes.refine_docs_node)
-    graph.add_node("rewrite_query_for_db_node", nodes.rewrite_query_for_db_node)
-    graph.add_node("rewrite_query_for_web_node", nodes.rewrite_query_for_web_node)
-    graph.add_node("rewrite_query_for_hybrid_node", nodes.rewrite_query_for_hybrid_node)
     graph.add_node("web_search_node", nodes.web_search_node)
     graph.add_node("generate_node", nodes.generate_node)
     graph.add_node("groundedness_check_node", nodes.groundedness_check_node)
-    graph.add_node("direct_llm_node", nodes.direct_llm_node)
     graph.add_node("direct_web_search_node", nodes.direct_web_search_node)
 
     # 2. Set Entry Point
     graph.set_entry_point("router")
 
     # 3. Router Conditional Edges
-    graph.add_conditional_edges("router", edges.decide_route)
+    graph.add_conditional_edges(
+        "router",
+        edges.decide_route,
+        {
+            "retrieve_node": "retrieve_node",
+            "direct_web_search_node": "direct_web_search_node",
+            "END": END,
+        },
+    )
+
 
     # 4. CRAG Core Pipeline Edges
     graph.add_edge("retrieve_node", "retrieval_eval_node")
@@ -45,22 +49,13 @@ def _build_crag_graph() -> Any:
         "retrieval_eval_node",
         edges.decide_after_retrieval_eval,
         {
-            "refine_docs_node": "refine_docs_node",
-            "rewrite_query_for_db_node": "rewrite_query_for_db_node",
-            "rewrite_query_for_web_node": "rewrite_query_for_web_node",
-            "rewrite_query_for_hybrid_node": "rewrite_query_for_hybrid_node",
+            "generate_node": "generate_node",
+            "retrieve_node": "retrieve_node",
+            "web_search_node": "web_search_node",
         },
     )
 
-    # Re-retrieval loop (2nd DB attempt)
-    graph.add_edge("rewrite_query_for_db_node", "retrieve_node")
-
-    # Knowledge refinement -> generation
-    graph.add_edge("refine_docs_node", "generate_node")
-
-    # Web search fallback & hybrid paths -> web_search -> generation
-    graph.add_edge("rewrite_query_for_web_node", "web_search_node")
-    graph.add_edge("rewrite_query_for_hybrid_node", "web_search_node")
+    # Web search fallback & hybrid path -> generate
     graph.add_edge("web_search_node", "generate_node")
 
     # Generation -> Independent Groundedness Fact-Check Judge
@@ -74,14 +69,15 @@ def _build_crag_graph() -> Any:
         },
     )
 
-    # Direct Routes Termination
-    graph.add_edge("direct_llm_node", END)
+    # Direct Web Search Route Termination
     graph.add_edge("direct_web_search_node", END)
 
     return graph.compile()
 
 
+
 _crag_graph = _build_crag_graph()
+
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

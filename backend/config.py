@@ -5,8 +5,9 @@ load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b"))
-GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "qwen/qwen3.6-27b")
+GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "qwen/qwen3.6-27b")
+GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
+
 
 # Supabase (vector store + future auth & sessions)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
