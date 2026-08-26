@@ -26,6 +26,11 @@ from guardrails.ingestion_guard import (
     validate_file_magic,
     wrap_context_boundary,
 )
+from guardrails.output_guard import (
+    process_output,
+    scrub_output,
+    verify_citations,
+)
 
 __all__ = [
     # Rate Limiter
@@ -50,4 +55,8 @@ __all__ = [
     "scan_chunk_for_indirect_injection",
     "validate_file_magic",
     "wrap_context_boundary",
+    # Output Guard
+    "process_output",
+    "scrub_output",
+    "verify_citations",
 ]

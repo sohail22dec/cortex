@@ -124,6 +124,9 @@ async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
     }
     final_state = await _crag_graph.ainvoke(initial_state, config=run_config)
 
+    valid_doc_sources = {c.get("source") for c in final_state.get("chunks", []) if c.get("source")}
+    valid_web_urls = {r.get("url") for r in final_state.get("web_results", []) if r.get("url")}
+
     return {
         "answer": final_state.get("answer", ""),
         "source": final_state.get("source", "llm"),
@@ -131,6 +134,8 @@ async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
         "route": final_state.get("route", "llm"),
         "evaluation_result": final_state.get("evaluation_result", ""),
         "is_grounded": final_state.get("is_grounded", True),
+        "valid_doc_sources": valid_doc_sources,
+        "valid_web_urls": valid_web_urls,
     }
 
 

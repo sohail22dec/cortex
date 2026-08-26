@@ -234,8 +234,33 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
         logger.warning("Groundedness judge error: %s. Defaulting to is_grounded=True.", e)
         is_grounded, reason = True, "judge_error_fallback"
 
+    # ── Strict Fallback on Unresolvable Hallucinations ─────────────────────────
+    # If the strict retry pass is STILL ungrounded, replace with safe honest refusal
+    retry_count = state.get("groundedness_retry_count", 0)
+    final_answer = answer
+    final_source = source
+    final_citations = state.get("citations", [])
+    final_route = state.get("route", "rag")
+
+    if not is_grounded and retry_count >= 1:
+        logger.warning(
+            "Groundedness Judge: Unresolvable hallucination detected after strict retry (%d). Triggering fallback refusal.",
+            retry_count,
+        )
+        final_answer = (
+            "I reviewed the provided documents, but could not find verifiable facts to answer "
+            "your question with complete confidence. Please check your uploaded files or provide additional details."
+        )
+        final_source = "guardrail"
+        final_citations = []
+        final_route = "hallucination_fallback"
+
     return {
         **state,
+        "answer": final_answer,
+        "source": final_source,
+        "citations": final_citations,
+        "route": final_route,
         "is_grounded": is_grounded,
         "groundedness_reason": reason,
     }

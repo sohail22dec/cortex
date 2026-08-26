@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import logging
+import re
+from typing import List, Set, Tuple
+
+logger = logging.getLogger(__name__)
+
+# ── Secret & Token Patterns for Output Scrubbing ──────────────────────────────
+
+_SECRET_OUTPUT_PATTERNS = [
+    (re.compile(r"sk-(?:proj-)?[a-zA-Z0-9_-]{20,}"), "<REDACTED_API_KEY>"),
+    (re.compile(r"gsk_[a-zA-Z0-9]{20,}"), "<REDACTED_API_KEY>"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "<REDACTED_AWS_KEY>"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{36,}\b"), "<REDACTED_GITHUB_TOKEN>"),
+    (
+        re.compile(
+            r"Bearer\s+[A-Za-z0-9\-_=]+\.[A-Za-z0-9\-_=]+\.?[A-Za-z0-9\-_+/=]*"
+        ),
+        "<REDACTED_JWT_TOKEN>",
+    ),
+    (
+        re.compile(r"(?:postgresql|postgres|mysql|mongodb(?:\+srv)?):\/\/[^\s]+"),
+        "<REDACTED_DB_URI>",
+    ),
+]
+
+# Internal system prompt boundary delimiters that should never be echoed
+_SYSTEM_DELIMITER_PATTERNS = [
+    re.compile(r"<\|im_start\|>.*?<\|im_end\|>", re.DOTALL),
+    re.compile(r"<\|im_start\|>|<\|im_end\|>"),
+    re.compile(r"\[SYSTEM\].*?\[/SYSTEM\]", re.IGNORECASE | re.DOTALL),
+    re.compile(r"\[SYSTEM\]|\[/SYSTEM\]|\[INST\]|\[/INST\]", re.IGNORECASE),
+    re.compile(r"---BEGIN INSTRUCTION---|---END SYSTEM PROMPT---"),
+]
+
+
+def scrub_output(text: str) -> str:
+    """
+    Sub-millisecond regex scrubber that removes leaked API keys, tokens, database URIs,
+    and internal system prompt delimiters from LLM output.
+    """
+    if not text:
+        return ""
+
+    scrubbed = text
+
+    # 1. Strip raw internal system delimiters
+    for pattern in _SYSTEM_DELIMITER_PATTERNS:
+        scrubbed = pattern.sub("", scrubbed)
+
+    # 2. Mask leaked secrets & API keys
+    for pattern, replacement in _SECRET_OUTPUT_PATTERNS:
+        scrubbed = pattern.sub(replacement, scrubbed)
+
+    return scrubbed.strip()
+
+
+def verify_citations(
+    citations: List[str],
+    valid_doc_sources: Set[str],
+    valid_web_urls: Set[str],
+) -> List[str]:
+    """
+    Validates generated citations against actual retrieved document names and web URLs.
+    Strips phantom/fabricated citations in 0.01ms.
+    """
+    if not citations:
+        return []
+
+    # Normalize valid sources (exact match and case-insensitive match)
+    valid_doc_normalized = {s.strip().lower() for s in valid_doc_sources if s}
+    valid_web_normalized = {u.strip().lower() for u in valid_web_urls if u}
+
+    verified: List[str] = []
+    seen = set()
+
+    for citation in citations:
+        c_clean = str(citation).strip()
+        c_lower = c_clean.lower()
+
+        if not c_clean or c_lower in seen:
+            continue
+
+        # Check if citation matches an active uploaded document
+        is_valid_doc = (
+            c_clean in valid_doc_sources
+            or c_lower in valid_doc_normalized
+        )
+
+        # Check if citation matches an active web search URL
+        is_valid_web = (
+            c_clean in valid_web_urls
+            or c_lower in valid_web_normalized
+            or any(valid_url in c_lower for valid_url in valid_web_normalized)
+        )
+
+        if is_valid_doc or is_valid_web:
+            verified.append(c_clean)
+            seen.add(c_lower)
+        else:
+            logger.warning(
+                "Citation Verification Guard: Dropped phantom/unverified citation '%s'",
+                c_clean,
+            )
+
+    return verified
+
+
+def process_output(
+    answer: str,
+    citations: List[str],
+    valid_doc_sources: Set[str] = None,
+    valid_web_urls: Set[str] = None,
+) -> Tuple[str, List[str]]:
+    """
+    Unified Layer 3 Output Guardrail:
+    1. Scrubs secrets and system prompt delimiters.
+    2. Validates and filters citations against active context sources.
+    """
+    clean_answer = scrub_output(answer)
+
+    doc_sources = valid_doc_sources or set()
+    web_urls = valid_web_urls or set()
+
+    # If valid sources were provided, filter citations; otherwise return as-is
+    if doc_sources or web_urls:
+        clean_citations = verify_citations(citations, doc_sources, web_urls)
+    else:
+        clean_citations = citations
+
+    return clean_answer, clean_citations

@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 
 import config
 from crag import run_crag_async
-from guardrails import check_prompt_async, rate_limit, redact_pii_async
+from guardrails import (
+    check_prompt_async,
+    process_output,
+    rate_limit,
+    redact_pii_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +75,19 @@ async def chat(request: ChatRequest):
             session_id=request.session_id,
             question=processed_query,
         )
-        return ChatResponse(
+
+        # ── Layer 3 Guardrail: Output Scrubbing & Citation Verification ───────
+        clean_answer, clean_citations = process_output(
             answer=result.get("answer", ""),
-            source=result.get("source", "llm"),
             citations=result.get("citations", []),
+            valid_doc_sources=result.get("valid_doc_sources", set()),
+            valid_web_urls=result.get("valid_web_urls", set()),
+        )
+
+        return ChatResponse(
+            answer=clean_answer,
+            source=result.get("source", "llm"),
+            citations=clean_citations,
             route=result.get("route", "llm"),
             suggest_web_search=result.get("source") == "web_search",
         )
