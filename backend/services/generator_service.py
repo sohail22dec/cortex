@@ -1,5 +1,6 @@
 """
-Generator Service — Synthesizes answers based on Document context, Web context, or Hybrid context.
+Generator Service — Synthesizes answers based on Document context, Web context, or Hybrid context
+with strict token budget capping and clean snippet formatting.
 """
 from __future__ import annotations
 
@@ -7,8 +8,8 @@ import logging
 import re
 from typing import Any, Dict, List
 
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 import config
 
@@ -49,22 +50,80 @@ def _clean_response(text: str) -> str:
     return cleaned if cleaned else text.strip()
 
 
-def build_doc_context(chunks: List[Dict[str, Any]]) -> str:
+def build_doc_context(
+    chunks: List[Dict[str, Any]],
+    max_chars: int = getattr(config, "MAX_DOC_CONTEXT_CHARS", 10000),
+) -> str:
+    """
+    Builds a clean, formatted document context string capped to max_chars to avoid
+    'Lost in the Middle' attention degradation and reduce LLM token latency.
+    """
+    if not chunks:
+        return ""
+
     parts = []
+    current_len = 0
+
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("source", "Unknown")
-        text = chunk.get("text", "")
-        parts.append(f"[Document Chunk {i} from '{source}']:\n{text}")
+        text = str(chunk.get("text", "")).strip()
+        if not text:
+            continue
+
+        formatted = f"[Document Chunk {i} from '{source}']:\n{text}"
+        chunk_len = len(formatted)
+
+        if current_len + chunk_len > max_chars:
+            remaining_budget = max_chars - current_len
+            if remaining_budget > 150:
+                # Include trimmed snippet up to remaining budget
+                truncated_text = text[: remaining_budget - 70].rsplit(" ", 1)[0]
+                parts.append(
+                    f"[Document Chunk {i} from '{source}']:\n{truncated_text} ... [truncated to fit context budget]"
+                )
+            break
+
+        parts.append(formatted)
+        current_len += chunk_len + 8  # separator padding
+
     return "\n\n---\n\n".join(parts)
 
 
-def build_web_context(web_results: List[Dict[str, Any]]) -> str:
+def build_web_context(
+    web_results: List[Dict[str, Any]],
+    max_chars: int = getattr(config, "MAX_WEB_CONTEXT_CHARS", 5000),
+    max_snippet_chars: int = getattr(config, "MAX_WEB_SNIPPET_CHARS", 800),
+) -> str:
+    """
+    Extracts only relevant clean fields from web search results (title, url, content)
+    and enforces strict length and snippet caps, discarding raw HTML payloads.
+    """
+    if not web_results:
+        return ""
+
     parts = []
+    current_len = 0
+
     for i, r in enumerate(web_results, 1):
-        title = r.get("title", "No title")
-        url = r.get("url", "")
-        content = r.get("content", "")
-        parts.append(f"[Web Result {i}: {title}]\nURL: {url}\n{content}")
+        title = str(r.get("title", "No title")).strip()
+        url = str(r.get("url", "")).strip()
+        content = str(r.get("content", "")).strip()
+        if not content:
+            continue
+
+        # Cap individual snippet length
+        if len(content) > max_snippet_chars:
+            content = content[:max_snippet_chars].rsplit(" ", 1)[0] + "..."
+
+        formatted = f"[Web Source {i}: {title}]\nURL: {url}\nSummary: {content}"
+        snippet_len = len(formatted)
+
+        if current_len + snippet_len > max_chars:
+            break
+
+        parts.append(formatted)
+        current_len += snippet_len + 8
+
     return "\n\n---\n\n".join(parts)
 
 
@@ -73,8 +132,8 @@ async def generate_rag_answer_async(
     chunks: List[Dict[str, Any]],
     strict: bool = False,
 ) -> Dict[str, Any]:
-    """Generates an answer from document chunks."""
-    context = build_doc_context(chunks)
+    """Generates an answer from document chunks with budget-capped context."""
+    context = build_doc_context(chunks, max_chars=config.MAX_DOC_CONTEXT_CHARS)
     prompt = STRICT_RAG_SYSTEM_PROMPT if strict else RAG_SYSTEM_PROMPT
 
     messages = [
@@ -96,7 +155,7 @@ async def generate_web_answer_async(
     question: str,
     web_results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Generates an answer from web search results."""
+    """Generates an answer from clean web search results with budget-capped context."""
     if not web_results:
         return {
             "answer": "I searched the web but could not find relevant results for your query.",
@@ -104,7 +163,7 @@ async def generate_web_answer_async(
             "citations": [],
         }
 
-    context = build_web_context(web_results)
+    context = build_web_context(web_results, max_chars=config.MAX_WEB_CONTEXT_CHARS)
     urls = [r.get("url", "") for r in web_results if r.get("url")]
 
     messages = [
@@ -126,9 +185,9 @@ async def generate_hybrid_answer_async(
     chunks: List[Dict[str, Any]],
     web_results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Generates an answer combining document chunks and supplementary web search results."""
-    doc_context = build_doc_context(chunks)
-    web_context = build_web_context(web_results)
+    """Generates an answer combining document chunks and supplementary web search results with balanced budgets."""
+    doc_context = build_doc_context(chunks, max_chars=config.MAX_HYBRID_DOC_CHARS)
+    web_context = build_web_context(web_results, max_chars=config.MAX_HYBRID_WEB_CHARS)
 
     combined_context = f"=== UPLOADED DOCUMENTS ===\n{doc_context}\n\n=== WEB SEARCH RESULTS ===\n{web_context}"
 

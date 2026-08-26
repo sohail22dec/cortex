@@ -40,5 +40,38 @@ if _enable_tracing and _api_key:
 else:
     os.environ["LANGCHAIN_TRACING_V2"] = "false"
     os.environ["LANGSMITH_TRACING"] = "false"
+# ── Layer 1: Frontline Guardrails Configuration ──────────────────────────────
+# Rate Limiting & Throttling
+ENABLE_RATE_LIMITING = os.getenv("ENABLE_RATE_LIMITING", "true").lower() in ("true", "1")
+RATE_LIMIT_CHAT_REQUESTS = int(os.getenv("RATE_LIMIT_CHAT_REQUESTS", "20"))
+RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
+RATE_LIMIT_UPLOAD_REQUESTS = int(os.getenv("RATE_LIMIT_UPLOAD_REQUESTS", "5"))
+RATE_LIMIT_UPLOAD_WINDOW = int(os.getenv("RATE_LIMIT_UPLOAD_WINDOW", "60"))
 
+# Prompt Injection & Jailbreak Defense
+ENABLE_PROMPT_GUARD = os.getenv("ENABLE_PROMPT_GUARD", "true").lower() in ("true", "1")
+USE_LOCAL_PROMPT_GUARD_MODEL = os.getenv("USE_LOCAL_PROMPT_GUARD_MODEL", "false").lower() in ("true", "1")
+PROMPT_GUARD_MODEL = os.getenv("PROMPT_GUARD_MODEL", "meta-llama/Prompt-Guard-86M")
+PROMPT_GUARD_THRESHOLD = float(os.getenv("PROMPT_GUARD_THRESHOLD", "0.6"))
 
+# PII & Sensitive Data Redaction
+ENABLE_PII_REDACTION = os.getenv("ENABLE_PII_REDACTION", "true").lower() in ("true", "1")
+ENABLE_PRESIDIO_NER = os.getenv("ENABLE_PRESIDIO_NER", "false").lower() in ("true", "1")
+
+# Document Ingestion Security
+ENABLE_INGESTION_GUARD = os.getenv("ENABLE_INGESTION_GUARD", "true").lower() in ("true", "1")
+
+# ── Per-Node Execution Timeouts (Seconds) ────────────────────────────────────
+TIMEOUT_ROUTER = float(os.getenv("TIMEOUT_ROUTER", "3.5"))
+TIMEOUT_RETRIEVAL = float(os.getenv("TIMEOUT_RETRIEVAL", "3.0"))
+TIMEOUT_RETRIEVAL_EVAL = float(os.getenv("TIMEOUT_RETRIEVAL_EVAL", "4.0"))
+TIMEOUT_WEB_SEARCH = float(os.getenv("TIMEOUT_WEB_SEARCH", "4.0"))
+TIMEOUT_GENERATION = float(os.getenv("TIMEOUT_GENERATION", "10.0"))
+TIMEOUT_GROUNDEDNESS = float(os.getenv("TIMEOUT_GROUNDEDNESS", "3.5"))
+
+# ── Context Token Budget & Length Ceilings (Characters) ──────────────────────
+MAX_DOC_CONTEXT_CHARS = int(os.getenv("MAX_DOC_CONTEXT_CHARS", "10000"))      # ~2,500 tokens
+MAX_WEB_CONTEXT_CHARS = int(os.getenv("MAX_WEB_CONTEXT_CHARS", "5000"))       # ~1,250 tokens
+MAX_WEB_SNIPPET_CHARS = int(os.getenv("MAX_WEB_SNIPPET_CHARS", "800"))        # ~200 tokens per snippet
+MAX_HYBRID_DOC_CHARS = int(os.getenv("MAX_HYBRID_DOC_CHARS", "7000"))         # ~1,750 tokens
+MAX_HYBRID_WEB_CHARS = int(os.getenv("MAX_HYBRID_WEB_CHARS", "3500"))         # ~875 tokens

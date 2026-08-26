@@ -4,9 +4,11 @@ import asyncio
 import logging
 import os
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+import config
+from guardrails import rate_limit, validate_file_magic
 from rag import document_processor, vector_store as vs
 
 logger = logging.getLogger(__name__)
@@ -32,12 +34,24 @@ class DeleteResponse(BaseModel):
     message: str
 
 
-@router.post("/documents/upload", response_model=UploadResponse)
+@router.post(
+    "/documents/upload",
+    response_model=UploadResponse,
+    dependencies=[
+        Depends(
+            rate_limit(
+                config.RATE_LIMIT_UPLOAD_REQUESTS,
+                config.RATE_LIMIT_UPLOAD_WINDOW,
+            )
+        )
+    ],
+)
 async def upload_document(
     file: UploadFile = File(...),
     session_id: str = Form(...),
 ):
-    ext = os.path.splitext(file.filename or "")[1].lower()
+    filename = file.filename or "unknown"
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
@@ -46,7 +60,7 @@ async def upload_document(
 
     content = await file.read()
 
-    # Size check
+    # 1. Size check
     size_mb = len(content) / (1024 * 1024)
     if size_mb > MAX_FILE_SIZE_MB:
         raise HTTPException(
@@ -54,24 +68,35 @@ async def upload_document(
             detail=f"File too large ({size_mb:.1f} MB). Max allowed: {MAX_FILE_SIZE_MB} MB",
         )
 
+    # 2. Layer 1 Ingestion Guard: Magic Bytes & Header Verification
+    is_valid_magic, magic_err = validate_file_magic(content, filename)
+    if not is_valid_magic:
+        logger.warning(
+            "File upload rejected for session %s ('%s'): %s",
+            session_id,
+            filename,
+            magic_err,
+        )
+        raise HTTPException(status_code=400, detail=magic_err)
+
     try:
-        # Offload file parsing and embedding generation to thread pool
+        # Offload file parsing, sanitization, and embedding generation to thread pool
         chunks = await asyncio.to_thread(
             document_processor.process_and_index,
             session_id=session_id,
             file_bytes=content,
-            filename=file.filename or "unknown",
+            filename=filename,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.exception("Failed to process document '%s'", file.filename)
+        logger.exception("Failed to process document '%s'", filename)
         raise HTTPException(status_code=500, detail=f"Processing error: {e}")
 
     return UploadResponse(
-        filename=file.filename or "unknown",
+        filename=filename,
         chunks=chunks,
-        message=f"Successfully indexed {chunks} chunks from '{file.filename}'",
+        message=f"Successfully indexed {chunks} chunks from '{filename}'",
     )
 
 
@@ -89,4 +114,3 @@ async def delete_document(filename: str, session_id: str):
 
     await asyncio.to_thread(vs.delete_document, session_id, filename)
     return DeleteResponse(message=f"Document '{filename}' removed from your session")
-

@@ -1,5 +1,5 @@
 """
-CRAG Edges — Conditional routing and branching logic for Corrective RAG.
+CRAG Edges — Conditional routing and branching logic for Corrective RAG with hard loop bounds.
 """
 from __future__ import annotations
 
@@ -18,9 +18,8 @@ def decide_route(state: CRAGState) -> Literal["retrieve_node", "direct_web_searc
         return "retrieve_node"
     if route == "web_search":
         return "direct_web_search_node"
-    # "direct_answer" terminates immediately since answer was generated directly by Router
+    # "direct_answer" and "unsafe" terminate immediately since answer/refusal was set directly by Router
     return "END"
-
 
 
 def decide_after_retrieval_eval(
@@ -31,10 +30,10 @@ def decide_after_retrieval_eval(
     "web_search_node",
 ]:
     """
-    CRAG Direct Branching:
+    CRAG Direct Branching with Strict Loop Bounds:
     - CORRECT: Chunks are relevant -> Proceed directly to generate_node.
-    - INCORRECT (1st attempt): Loops back to retrieve_node with bundled db query.
-    - INCORRECT (2nd attempt): Vector DB exhausted -> Proceeds directly to web_search_node.
+    - INCORRECT (1st attempt, db_retry_count <= 1): Loops back to retrieve_node with bundled db query.
+    - INCORRECT (2nd attempt / max retries reached): Vector DB exhausted -> Proceeds directly to web_search_node.
     - AMBIGUOUS: Proceeds directly to web_search_node for hybrid augmentation.
     """
     evaluation = state.get("evaluation_result", "CORRECT")
@@ -44,27 +43,32 @@ def decide_after_retrieval_eval(
         return "generate_node"
 
     if evaluation == "INCORRECT":
-        # db_retry_count is 1 on the 1st failure (after increment), >1 on 2nd failure
+        # Strict hard loop bound: Allow at most 1 retry to prevent infinite retrieval cycles
         if db_retry_count <= 1:
-            logger.info("CRAG Eval: Chunks INCORRECT on 1st retrieval. Looping directly back to retrieve_node for 2nd DB attempt...")
+            logger.info(
+                "CRAG Eval: Chunks INCORRECT on 1st retrieval (retry %d/1). Looping back to retrieve_node...",
+                db_retry_count,
+            )
             return "retrieve_node"
-        logger.info("CRAG Eval: Chunks STILL INCORRECT after 2nd DB retrieval. Falling back directly to web_search_node...")
+        logger.info(
+            "CRAG Eval: Chunks STILL INCORRECT after max retries (%d). Proceeding to web_search_node...",
+            db_retry_count,
+        )
         return "web_search_node"
 
     # AMBIGUOUS path
-    logger.info("CRAG Eval: Retrieval is AMBIGUOUS. Falling back directly to web_search_node for hybrid augmentation...")
+    logger.info("CRAG Eval: Retrieval is AMBIGUOUS. Proceeding to web_search_node for hybrid augmentation...")
     return "web_search_node"
-
 
 
 def decide_after_groundedness(
     state: CRAGState
 ) -> Literal["generate_node", "END"]:
     """
-    Independent Groundedness Check:
+    Independent Groundedness Check with Strict Loop Bounds:
     - If grounded: terminate to END.
     - If ungrounded (hallucination detected) and retry_count < 1: retry generation with strict prompt.
-    - If retry limit reached: terminate to END.
+    - If retry limit reached (retry_count >= 1): terminate to END to guarantee no runaway loops.
     """
     is_grounded = state.get("is_grounded", True)
     retry_count = state.get("groundedness_retry_count", 0)
@@ -73,8 +77,11 @@ def decide_after_groundedness(
         return "END"
 
     if retry_count < 1:
-        logger.warning("Groundedness Judge detected hallucination. Retrying generation with strict prompt...")
+        logger.warning(
+            "Groundedness Judge detected hallucination (retry %d/1). Retrying generation with strict prompt...",
+            retry_count,
+        )
         return "generate_node"
 
-    logger.warning("Groundedness retry limit reached. Delivering answer.")
+    logger.warning("Groundedness hard retry limit reached (%d). Terminating to END.", retry_count)
     return "END"

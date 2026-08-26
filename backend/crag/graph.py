@@ -118,6 +118,7 @@ async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
     }
 
     run_config = {
+        "recursion_limit": 10,
         "tags": ["cortex", "crag-workflow"],
         "metadata": {"session_id": session_id, "question": question[:50]},
     }

@@ -1,5 +1,5 @@
 """
-CRAG Nodes — Node execution functions for Corrective RAG.
+CRAG Nodes — Node execution functions for Corrective RAG with per-node execution timeouts.
 """
 from __future__ import annotations
 
@@ -12,15 +12,13 @@ from crag.state import CRAGState
 from rag import vector_store as vs
 from services import (
     classify_async,
+    evaluate_groundedness_async,
     evaluate_retrieval_async,
-    rewrite_query_for_vector_db_async,
-    rewrite_query_for_web_async,
-    search_web_async,
+    generate_hybrid_answer_async,
     generate_rag_answer_async,
     generate_web_answer_async,
-    generate_hybrid_answer_async,
-    evaluate_groundedness_async,
-    run_llm_async,
+    rewrite_query_for_web_async,
+    search_web_async,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,26 +35,38 @@ async def router_node(state: CRAGState) -> CRAGState:
     route = classification["route"]
     direct_answer = classification.get("direct_answer", "")
 
+    is_unsafe = route == "unsafe"
+    is_direct = route == "direct_answer"
+
     return {
         **state,
         "route": route,
-        "answer": direct_answer if route == "direct_answer" else state.get("answer", ""),
-        "source": "llm" if route == "direct_answer" else state.get("source", ""),
-        "is_grounded": True if route == "direct_answer" else state.get("is_grounded", True),
+        "answer": direct_answer if (is_direct or is_unsafe) else state.get("answer", ""),
+        "source": "guardrail" if is_unsafe else ("llm" if is_direct else state.get("source", "")),
+        "is_grounded": True if (is_direct or is_unsafe) else state.get("is_grounded", True),
     }
-
 
 
 # ── 2. Vector DB Retrieval Node (1st & 2nd Pass) ──────────────────────────────
 
 async def retrieve_node(state: CRAGState) -> CRAGState:
     session_id = state["session_id"]
-    # Use transformed query if available (e.g. on 2nd retrieval), otherwise original question
     query = state.get("transformed_query") or state["question"]
 
-    chunks = await asyncio.to_thread(
-        vs.similarity_search, session_id, query, k=config.TOP_K_RESULTS
-    )
+    try:
+        chunks = await asyncio.wait_for(
+            asyncio.to_thread(
+                vs.similarity_search, session_id, query, k=config.TOP_K_RESULTS
+            ),
+            timeout=config.TIMEOUT_RETRIEVAL,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Vector DB retrieval timed out after %.1fs. Falling back to empty chunks.", config.TIMEOUT_RETRIEVAL)
+        chunks = []
+    except Exception as e:
+        logger.warning("Vector DB retrieval error: %s. Falling back to empty chunks.", e)
+        chunks = []
+
     return {**state, "chunks": chunks}
 
 
@@ -68,13 +78,43 @@ async def retrieval_eval_node(state: CRAGState) -> CRAGState:
     doc_names = state.get("document_names", [])
     db_retry_count = state.get("db_retry_count", 0)
 
-    eval_result, refined_chunks, reason, db_query, web_query = await evaluate_retrieval_async(
-        question, chunks, doc_names
-    )
+    # If no chunks were retrieved, immediately flag INCORRECT
+    if not chunks:
+        return {
+            **state,
+            "chunks": [],
+            "refined_chunks": [],
+            "evaluation_result": "INCORRECT",
+            "evaluation_reason": "No document chunks retrieved",
+            "db_retry_count": db_retry_count + 1,
+            "transformed_query": question,
+            "web_rewritten_query": question,
+        }
 
-    # If CORRECT: immediately refine chunks to verified relevant chunks (de-noise)
-    # If INCORRECT (Retry 0): prepare transformed_query for 2nd DB retrieval attempt
-    # If INCORRECT (Retry >= 1) or AMBIGUOUS: prepare transformed_query for Tavily Web Search
+    try:
+        eval_result, refined_chunks, reason, db_query, web_query = await asyncio.wait_for(
+            evaluate_retrieval_async(question, chunks, doc_names),
+            timeout=config.TIMEOUT_RETRIEVAL_EVAL,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Retrieval evaluator timed out after %.1fs. Defaulting to CORRECT to proceed with generation.",
+            config.TIMEOUT_RETRIEVAL_EVAL,
+        )
+        eval_result = "CORRECT"
+        refined_chunks = chunks
+        reason = "evaluator_timeout_fallback"
+        db_query = question
+        web_query = question
+    except Exception as e:
+        logger.warning("Retrieval evaluator error: %s. Proceeding with raw chunks.", e)
+        eval_result = "CORRECT"
+        refined_chunks = chunks
+        reason = "evaluator_error_fallback"
+        db_query = question
+        web_query = question
+
+    # Branch assignment with strict retry counting
     if eval_result == "CORRECT":
         active_chunks = refined_chunks
         transformed_query = state.get("transformed_query") or question
@@ -86,7 +126,7 @@ async def retrieval_eval_node(state: CRAGState) -> CRAGState:
     else:  # INCORRECT (Retry >= 1) or AMBIGUOUS
         active_chunks = refined_chunks if eval_result == "AMBIGUOUS" else []
         transformed_query = web_query
-        next_retry_count = db_retry_count
+        next_retry_count = db_retry_count + 1
 
     return {
         **state,
@@ -101,13 +141,22 @@ async def retrieval_eval_node(state: CRAGState) -> CRAGState:
     }
 
 
-
-
 # ── 6. Web Search Node ────────────────────────────────────────────────────────
 
 async def web_search_node(state: CRAGState) -> CRAGState:
     query = state.get("transformed_query") or state["question"]
-    results = await search_web_async(query, max_results=5)
+    try:
+        results = await asyncio.wait_for(
+            search_web_async(query, max_results=5),
+            timeout=config.TIMEOUT_WEB_SEARCH,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Tavily web search timed out after %.1fs. Continuing with empty web results.", config.TIMEOUT_WEB_SEARCH)
+        results = []
+    except Exception as e:
+        logger.warning("Web search error: %s. Continuing with empty web results.", e)
+        results = []
+
     return {**state, "web_results": results}
 
 
@@ -121,12 +170,29 @@ async def generate_node(state: CRAGState) -> CRAGState:
     retry_count = state.get("groundedness_retry_count", 0)
     strict_mode = retry_count > 0
 
-    if eval_result == "CORRECT":
-        result = await generate_rag_answer_async(question, chunks, strict=strict_mode)
-    elif eval_result == "INCORRECT":
-        result = await generate_web_answer_async(question, web_results)
-    else:  # AMBIGUOUS
-        result = await generate_hybrid_answer_async(question, chunks, web_results)
+    try:
+        if eval_result == "CORRECT":
+            coro = generate_rag_answer_async(question, chunks, strict=strict_mode)
+        elif eval_result == "INCORRECT":
+            coro = generate_web_answer_async(question, web_results)
+        else:  # AMBIGUOUS
+            coro = generate_hybrid_answer_async(question, chunks, web_results)
+
+        result = await asyncio.wait_for(coro, timeout=config.TIMEOUT_GENERATION)
+    except asyncio.TimeoutError:
+        logger.warning("Generation node timed out after %.1fs.", config.TIMEOUT_GENERATION)
+        result = {
+            "answer": "I apologize, but answering your request took longer than expected. Please try again or simplify your question.",
+            "source": "llm",
+            "citations": [],
+        }
+    except Exception as e:
+        logger.exception("Generation error: %s", e)
+        result = {
+            "answer": "An error occurred while generating the answer. Please try again.",
+            "source": "llm",
+            "citations": [],
+        }
 
     return {
         **state,
@@ -143,16 +209,30 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
     """Evaluates whether the generated answer is strictly grounded in the context."""
     source = state.get("source", "rag")
 
-    # If pure web search, skip doc groundedness check
-    if source == "web_search":
-        return {**state, "is_grounded": True, "groundedness_reason": "Web search response."}
+    # If pure web search or guardrail, skip doc groundedness check
+    if source in ("web_search", "guardrail", "llm"):
+        return {**state, "is_grounded": True, "groundedness_reason": "Skipped for non-rag source."}
 
     question = state["question"]
     answer = state.get("answer", "")
     chunks = state.get("chunks", [])
 
     context = "\n\n".join(c.get("text", "") for c in chunks)
-    is_grounded, reason = await evaluate_groundedness_async(question, context, answer)
+
+    try:
+        is_grounded, reason = await asyncio.wait_for(
+            evaluate_groundedness_async(question, context, answer),
+            timeout=config.TIMEOUT_GROUNDEDNESS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Groundedness judge timed out after %.1fs. Defaulting to is_grounded=True.",
+            config.TIMEOUT_GROUNDEDNESS,
+        )
+        is_grounded, reason = True, "judge_timeout_fallback"
+    except Exception as e:
+        logger.warning("Groundedness judge error: %s. Defaulting to is_grounded=True.", e)
+        is_grounded, reason = True, "judge_error_fallback"
 
     return {
         **state,
@@ -161,12 +241,31 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
     }
 
 
-# ── 9. Direct Routes (LLM & Direct Web Search) ────────────────────────────────
+# ── 9. Direct Routes (Direct Web Search) ──────────────────────────────────────
 
 async def direct_web_search_node(state: CRAGState) -> CRAGState:
-    query = await rewrite_query_for_web_async(state["question"])
-    results = await search_web_async(query, max_results=5)
-    gen_result = await generate_web_answer_async(state["question"], results)
+    try:
+        query = await asyncio.wait_for(
+            rewrite_query_for_web_async(state["question"]),
+            timeout=config.TIMEOUT_ROUTER,
+        )
+        results = await asyncio.wait_for(
+            search_web_async(query, max_results=5),
+            timeout=config.TIMEOUT_WEB_SEARCH,
+        )
+        gen_result = await asyncio.wait_for(
+            generate_web_answer_async(state["question"], results),
+            timeout=config.TIMEOUT_GENERATION,
+        )
+    except Exception as e:
+        logger.warning("Direct web search error: %s", e)
+        query = state["question"]
+        results = []
+        gen_result = {
+            "answer": "Unable to fetch live web search results at this moment. Please try again.",
+            "source": "web_search",
+            "citations": [],
+        }
 
     return cast(
         CRAGState,
