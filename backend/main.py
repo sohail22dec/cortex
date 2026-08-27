@@ -1,8 +1,10 @@
 import logging
+import os
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 
 from api.chat import router as chat_router
 from api.documents import router as documents_router
@@ -22,8 +24,14 @@ app = FastAPI(
 # ── CORS (Next.js frontend) ───────────────────────────────────────────────────
 origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
     "https://cortex-lime-zeta.vercel.app",
 ]
+
+# Allow custom frontend URL from env if configured
+custom_frontend = os.getenv("FRONTEND_URL")
+if custom_frontend and custom_frontend not in origins:
+    origins.append(custom_frontend)
 
 app.add_middleware(
     CORSMiddleware,
