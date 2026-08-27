@@ -32,4 +32,18 @@ dependencies = [
     "langchain-google-genai>=4.2.5",
     "grandalf>=0.8",
     "langgraph-cli[inmem]>=0.4.31",
+    # Evaluation framework
+    "ragas>=0.2.0",
+    "datasets>=2.18.0",
+    "pandas>=2.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]

@@ -13,6 +13,7 @@ from guardrails import (
     rate_limit,
     redact_pii_async,
 )
+from services.conversation_service import get_conversation_context, save_message
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,19 @@ async def chat(request: ChatRequest):
         pii_res = await redact_pii_async(request.message)
         processed_query = pii_res.sanitized_text
 
+        # ── Conversation Memory ─────────────────────────────────────────────
+        # Fetch prior context. If over the token budget, older messages are
+        # summarized and only the last MAX_RECENT_MESSAGES are kept verbatim.
+        prior_context = await get_conversation_context(request.session_id)
+        if prior_context:
+            augmented_question = f"{prior_context}\n\nCurrent question: {processed_query}"
+        else:
+            augmented_question = processed_query
+
         # ── CRAG Workflow Execution ───────────────────────────────────────────
         result = await run_crag_async(
             session_id=request.session_id,
-            question=processed_query,
+            question=augmented_question,
         )
 
         # ── Layer 3 Guardrail: Output Scrubbing & Citation Verification ───────
@@ -83,6 +93,11 @@ async def chat(request: ChatRequest):
             valid_doc_sources=result.get("valid_doc_sources", set()),
             valid_web_urls=result.get("valid_web_urls", set()),
         )
+
+        # Persist this turn so future questions have context.
+        # We save the redacted query (not raw) to avoid storing PII in Supabase.
+        save_message(request.session_id, "user", processed_query)
+        save_message(request.session_id, "assistant", clean_answer)
 
         return ChatResponse(
             answer=clean_answer,
