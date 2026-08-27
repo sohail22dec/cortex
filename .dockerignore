@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+.env.*
+.venv
+node_modules
+.next
+evals/reports
+qdrant_data

@@ -214,6 +214,22 @@ cd backend
 langgraph dev
 ```
 
+### Docker & Docker Compose
+
+Run the full stack containerized:
+
+```bash
+# Build and run backend & frontend containers
+docker compose up --build -d
+
+# View service logs
+docker compose logs -f
+
+# Shut down containers
+docker compose down
+```
+
+
 ---
 
 ## Testing

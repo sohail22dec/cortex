@@ -186,6 +186,33 @@ Open `http://localhost:3000` and start chatting.
 
 ---
 
+## Running with Docker (Recommended)
+
+You can spin up the full Cortex stack (Backend + Frontend) with Docker Compose:
+
+### 1. Ensure `backend/.env` is configured
+```bash
+cp backend/.env.example backend/.env
+# Edit backend/.env with your API keys (GROQ_API_KEY, TAVILY_API_KEY, SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY)
+```
+
+### 2. Start services with Docker Compose
+```bash
+docker compose up --build -d
+```
+
+- **Frontend UI**: [http://localhost:3000](http://localhost:3000)
+- **FastAPI API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check**: [http://localhost:8000/api/health](http://localhost:8000/api/health)
+
+### 3. Stop containers
+```bash
+docker compose down
+```
+
+---
+
+
 ## Project Structure
 
 ```text
