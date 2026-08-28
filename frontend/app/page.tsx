@@ -11,27 +11,51 @@ export interface ChatSession {
   createdAt: number;
 }
 
+// ── Safe UUID generation (crypto.randomUUID is undefined on insecure HTTP origins in some browsers) ──
+function generateSafeId(): string {
+  if (typeof window !== "undefined" && window.crypto && typeof window.crypto.randomUUID === "function") {
+    try {
+      return window.crypto.randomUUID();
+    } catch {
+      // fallback
+    }
+  }
+  return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 9);
+}
+
 // ── Persistent State ────────────────────────────────────────────────────────
 function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "ssr";
   const key = "cortex_user_id";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = generateSafeId();
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return generateSafeId();
   }
-  return id;
 }
 
 function loadSessions(): ChatSession[] {
   if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem("cortex_sessions");
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem("cortex_sessions");
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
 }
 
 function saveSessions(sessions: ChatSession[]) {
   if (typeof window !== "undefined") {
-    localStorage.setItem("cortex_sessions", JSON.stringify(sessions));
+    try {
+      localStorage.setItem("cortex_sessions", JSON.stringify(sessions));
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -96,7 +120,7 @@ export default function Home() {
         // Create new session lazily
         const initialMsgs = typeof newMessages === "function" ? newMessages([]) : newMessages;
         updatedSession = {
-          id: crypto.randomUUID(),
+          id: generateSafeId(),
           title: initialMsgs.length > 0 ? initialMsgs[0].content.slice(0, 30) + "..." : "New Chat",
           messages: initialMsgs,
           createdAt: Date.now(),
@@ -124,7 +148,7 @@ export default function Home() {
   }, [activeChatIdRef]);
 
   const createNewChat = useCallback(() => {
-    const newId = crypto.randomUUID();
+    const newId = generateSafeId();
     const newSession: ChatSession = {
       id: newId,
       title: "New Chat",
@@ -154,12 +178,12 @@ export default function Home() {
     // The setMessages logic handles lazy creation.
 
     const userMsg: Message = {
-      id: crypto.randomUUID(),
+      id: generateSafeId(),
       role: "user",
       content: question,
     };
     const loadingMsg: Message = {
-      id: crypto.randomUUID(),
+      id: generateSafeId(),
       role: "assistant",
       content: "",
       isLoading: true,
