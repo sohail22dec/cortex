@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ChatMessage, { Message } from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import Sidebar from "./components/Sidebar";
@@ -39,11 +39,14 @@ function saveSessions(sessions: ChatSession[]) {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Home() {
-  const [userId, setUserId] = useState("ssr");
+  const [userId, setUserId] = useState<string>("ssr");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const activeChatIdRef = useRef(activeChatId);
-  activeChatIdRef.current = activeChatId;
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -52,14 +55,17 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize on mount
+  // Initialize on mount via queueMicrotask/hydration effect
   useEffect(() => {
-    setUserId(getOrCreateUserId());
+    const id = getOrCreateUserId();
     const loaded = loadSessions();
-    setSessions(loaded);
-    if (loaded.length > 0) {
-      setActiveChatId(loaded[0].id);
-    }
+    queueMicrotask(() => {
+      setUserId(id);
+      setSessions(loaded);
+      if (loaded.length > 0) {
+        setActiveChatId(loaded[0].id);
+      }
+    });
   }, []);
 
   // Load documents for this user (global knowledge base)
@@ -72,8 +78,8 @@ export default function Home() {
   }, [userId]);
 
   // Derived active messages
-  const activeSession = sessions.find(s => s.id === activeChatId);
-  const messages = activeSession ? activeSession.messages : [];
+  const activeSession = useMemo(() => sessions.find(s => s.id === activeChatId), [sessions, activeChatId]);
+  const messages = useMemo(() => activeSession ? activeSession.messages : [], [activeSession]);
 
   // Auto-scroll
   useEffect(() => {
@@ -83,7 +89,7 @@ export default function Home() {
   // Session state updates
   const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
     setSessions((prevSessions) => {
-      let activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
+      const activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
 
       let updatedSession: ChatSession;
       if (activeIdx === -1) {

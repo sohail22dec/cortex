@@ -1,14 +1,13 @@
 "use client";
 import React from "react";
-import SourceBadge from "./SourceBadge";
 import DocumentUpload from "./DocumentUpload";
 import DocumentList from "./DocumentList";
-import { ChatSession } from "../page"; // We can just define the type locally or import it. Wait, I'll define it locally to prevent circular dependency, or use import type.
+import { Message } from "./ChatMessage";
 
 export interface ChatSessionData {
   id: string;
   title: string;
-  messages: any[];
+  messages: Message[];
   createdAt: number;
 }
 
