@@ -360,8 +360,9 @@ export default function Home() {
                   ...m,
                   isLoading: false,
                   content:
-                    "⚠️ Failed to connect to the Coretext backend service. Please check that FastAPI is running on port 8000.",
+                    `⚠️ Failed to connect to the backend service at ${API_URL}. Please check that the FastAPI service is running.`,
                   source: "llm" as const,
+
                 }
               : m
           );
