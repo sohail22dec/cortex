@@ -53,13 +53,8 @@ export function DocumentsDrawer({
   const [previewDoc, setPreviewDoc] = useState<DocumentInfo | null>(null);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
   const [manageDeletedOpen, setManageDeletedOpen] = useState(false);
-  const [deletedDocs, setDeletedDocs] = useState<DeletedDocInfo[]>([
-    {
-      filename: "Legacy_Prompt_Engineering_V1.pdf",
-      deletedAt: "May 15, 2025",
-      sizeMb: "1.2 MB",
-    },
-  ]);
+  const [deletedDocs, setDeletedDocs] = useState<DeletedDocInfo[]>([]);
+
 
   const filteredDocs = documents.filter((d) =>
     d.filename.toLowerCase().includes(searchQuery.toLowerCase())

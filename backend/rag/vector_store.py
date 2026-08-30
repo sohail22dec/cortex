@@ -100,6 +100,23 @@ def list_document_names(session_id: str) -> list[str]:
     return sorted(names)
 
 
+def list_documents_info(session_id: str) -> list[dict]:
+    client = _get_client()
+    response = (
+        client.table(TABLE)
+        .select("source")
+        .eq("session_id", session_id)
+        .execute()
+    )
+    counts: dict[str, int] = {}
+    for row in (response.data or []):
+        src = row.get("source")
+        if src:
+            counts[src] = counts.get(src, 0) + 1
+    return [{"filename": name, "chunks": count} for name, count in sorted(counts.items())]
+
+
 def delete_document(session_id: str, filename: str) -> None:
     client = _get_client()
     client.table(TABLE).delete().eq("session_id", session_id).eq("source", filename).execute()
+

@@ -19,6 +19,12 @@ export interface ChatSession {
   timestampStr?: string;
 }
 
+interface DocMeta {
+  chunks: number;
+  sizeMb: string;
+  uploadDate: string;
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function generateSafeId(): string {
@@ -47,133 +53,59 @@ function getOrCreateUserId(): string {
   }
 }
 
-// Initial mock conversations matching the design mockup for high-fidelity demonstration
-const INITIAL_DEMO_SESSIONS: ChatSession[] = [
-  {
-    id: "demo-rag-1",
-    title: "What is RAG and how does it work?",
-    createdAt: Date.now() - 1000 * 60 * 5, // 5 min ago
-    timestampStr: "2:31 PM",
-    messages: [
-      {
-        id: "msg-user-1",
-        role: "user",
-        content: "What is RAG and how does it work?",
-        timestamp: "2:31 PM",
-      },
-      {
-        id: "msg-assistant-1",
-        role: "assistant",
-        content: `RAG (Retrieval-Augmented Generation) is a technique that combines the power of information retrieval and large language models to generate more accurate and up-to-date responses.
+function getDocMetaCache(userId: string): Record<string, DocMeta> {
+  if (typeof window === "undefined" || !userId || userId === "ssr") return {};
+  try {
+    const raw = localStorage.getItem(`coretext_docs_${userId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
-Here's how it works:
+function saveDocMeta(userId: string, filename: string, meta: DocMeta) {
+  if (typeof window === "undefined" || !userId || userId === "ssr") return;
+  try {
+    const cache = getDocMetaCache(userId);
+    cache[filename] = meta;
+    localStorage.setItem(`coretext_docs_${userId}`, JSON.stringify(cache));
+  } catch {
+    // ignore
+  }
+}
 
-1. **Retrieval**: When a user asks a question, the system first retrieves relevant documents or passages from a knowledge base.
-2. **Augmentation**: These retrieved documents are then provided as context to the language model.
-3. **Generation**: The language model uses this context to generate a response that is more informed, accurate, and less likely to hallucinate.
-
-This approach helps in grounding the model's responses in real data, making it ideal for enterprise applications and domain-specific knowledge.`,
-        source: "rag",
-        citations: [
-          "RAG Paper (2020).pdf",
-          "https://python.langchain.com/docs/concepts/rag",
-          "https://docs.llamaindex.ai/en/stable/getting_started/concepts/",
-          "Supabase pgvector Guide.pdf",
-          "https://groq.com/docs",
-        ],
-        timestamp: "2:31 PM",
-        chunksCount: 5,
-      },
-    ],
-  },
-  {
-    id: "demo-rag-2",
-    title: "Explain LangGraph with example",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24, // Yesterday
-    timestampStr: "Yesterday",
-    messages: [],
-  },
-  {
-    id: "demo-rag-3",
-    title: "Best practices for chunking documents",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 4,
-    timestampStr: "May 26",
-    messages: [],
-  },
-  {
-    id: "demo-rag-4",
-    title: "How to evaluate RAG systems?",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 6,
-    timestampStr: "May 24",
-    messages: [],
-  },
-  {
-    id: "demo-rag-5",
-    title: "Difference between RAG and Fine-tuning",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 7,
-    timestampStr: "May 23",
-    messages: [],
-  },
-  {
-    id: "demo-rag-6",
-    title: "Agentic RAG Architecture",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 9,
-    timestampStr: "May 21",
-    messages: [],
-  },
-  {
-    id: "demo-rag-7",
-    title: "Vector DB comparison",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 10,
-    timestampStr: "May 20",
-    messages: [],
-  },
-];
-
-const INITIAL_DOCUMENTS: DocumentInfo[] = [
-  {
-    filename: "RAG_Research_Paper.pdf",
-    chunks: 128,
-    sizeMb: "2.4 MB",
-    uploadDate: "May 28, 2025",
-  },
-  {
-    filename: "LangChain_Documentation.pdf",
-    chunks: 256,
-    sizeMb: "3.1 MB",
-    uploadDate: "May 27, 2025",
-  },
-  {
-    filename: "LlamaIndex_Guide.pdf",
-    chunks: 198,
-    sizeMb: "2.7 MB",
-    uploadDate: "May 25, 2025",
-  },
-  {
-    filename: "Vector_Databases_Overview.pdf",
-    chunks: 96,
-    sizeMb: "1.8 MB",
-    uploadDate: "May 20, 2025",
-  },
-  {
-    filename: "AI_Agents_The_Complete_Guide.pdf",
-    chunks: 310,
-    sizeMb: "4.2 MB",
-    uploadDate: "May 18, 2025",
-  },
-];
+function removeDocMeta(userId: string, filename: string) {
+  if (typeof window === "undefined" || !userId || userId === "ssr") return;
+  try {
+    const cache = getDocMetaCache(userId);
+    delete cache[filename];
+    localStorage.setItem(`coretext_docs_${userId}`, JSON.stringify(cache));
+  } catch {
+    // ignore
+  }
+}
 
 function loadSavedSessions(): ChatSession[] {
-  if (typeof window === "undefined") return INITIAL_DEMO_SESSIONS;
+  if (typeof window === "undefined") return [];
   try {
     const stored = localStorage.getItem("coretext_sessions");
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        // Filter out any mock/demo sessions from earlier versions
+        return parsed.filter(
+          (s) =>
+            s &&
+            typeof s === "object" &&
+            typeof s.id === "string" &&
+            !s.id.startsWith("demo-rag-") &&
+            s.id !== "demo-rag-1"
+        );
+      }
     }
-    return INITIAL_DEMO_SESSIONS;
+    return [];
   } catch {
-    return INITIAL_DEMO_SESSIONS;
+    return [];
   }
 }
 
@@ -189,9 +121,9 @@ function saveSessionsToStorage(sessions: ChatSession[]) {
 
 export default function Home() {
   const [userId, setUserId] = useState<string>("ssr");
-  const [sessions, setSessions] = useState<ChatSession[]>(INITIAL_DEMO_SESSIONS);
-  const [activeChatId, setActiveChatId] = useState<string | null>("demo-rag-1");
-  const activeChatIdRef = useRef(activeChatId);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const activeChatIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -199,7 +131,7 @@ export default function Home() {
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [documents, setDocuments] = useState<DocumentInfo[]>(INITIAL_DOCUMENTS);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [documentsDrawerOpen, setDocumentsDrawerOpen] = useState(false);
 
@@ -207,11 +139,15 @@ export default function Home() {
   useEffect(() => {
     const id = getOrCreateUserId();
     const loadedSessions = loadSavedSessions();
+    saveSessionsToStorage(loadedSessions);
+
     queueMicrotask(() => {
       setUserId(id);
       setSessions(loadedSessions);
       if (loadedSessions.length > 0) {
         setActiveChatId(loadedSessions[0].id);
+      } else {
+        setActiveChatId(null);
       }
     });
   }, []);
@@ -219,23 +155,34 @@ export default function Home() {
   // Sync documents from backend
   useEffect(() => {
     if (userId === "ssr") return;
-    fetch(`${API_URL}/api/documents?session_id=${userId}`)
-      .then((r) => r.json())
+    fetch(`${API_URL}/api/documents?session_id=${encodeURIComponent(userId)}`)
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((data) => {
-        if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
+        if (data && Array.isArray(data.documents)) {
+          const metaCache = getDocMetaCache(userId);
           const backendDocs: DocumentInfo[] = data.documents.map((name: string) => {
-            const existing = INITIAL_DOCUMENTS.find((d) => d.filename === name);
+            const cached = metaCache[name];
+            const itemFromBackend = data.items?.find(
+              (it: { filename: string; chunks: number }) => it.filename === name
+            );
             return {
               filename: name,
-              chunks: existing?.chunks || 128,
-              sizeMb: existing?.sizeMb || "2.4 MB",
-              uploadDate: existing?.uploadDate || "Today",
+              chunks: itemFromBackend?.chunks || cached?.chunks || 0,
+              sizeMb: cached?.sizeMb || "Uploaded",
+              uploadDate: cached?.uploadDate || "Uploaded",
             };
           });
           setDocuments(backendDocs);
+        } else {
+          setDocuments([]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // If backend fetch fails, do not invent mock documents
+      });
   }, [userId]);
 
   // Active session and messages
@@ -248,48 +195,16 @@ export default function Home() {
     [activeSession]
   );
 
-  // Update session helper
-  const setMessages = useCallback(
-    (newMessages: MessageData[] | ((prev: MessageData[]) => MessageData[])) => {
-      setSessions((prevSessions) => {
-        const activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
-
-        if (activeIdx === -1) {
-          const initialMsgs = typeof newMessages === "function" ? newMessages([]) : newMessages;
-          const newSession: ChatSession = {
-            id: generateSafeId(),
-            title: initialMsgs.length > 0 ? initialMsgs[0].content.slice(0, 32) : "New Chat",
-            messages: initialMsgs,
-            createdAt: Date.now(),
-          };
-          const updated = [newSession, ...prevSessions];
-          saveSessionsToStorage(updated);
-          setTimeout(() => setActiveChatId(newSession.id), 0);
-          return updated;
-        } else {
-          const session = prevSessions[activeIdx];
-          const updatedMsgs =
-            typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
-          const updatedSession: ChatSession = { ...session, messages: updatedMsgs };
-
-          if (session.messages.length === 0 && updatedMsgs.length > 0 && updatedMsgs[0].role === "user") {
-            updatedSession.title =
-              updatedMsgs[0].content.length > 32
-                ? updatedMsgs[0].content.slice(0, 32) + "..."
-                : updatedMsgs[0].content;
-          }
-
-          const updated = [...prevSessions];
-          updated[activeIdx] = updatedSession;
-          saveSessionsToStorage(updated);
-          return updated;
-        }
-      });
-    },
-    []
-  );
-
   const createNewChat = useCallback(() => {
+    const active = sessions.find((s) => s.id === activeChatIdRef.current);
+    if (active && active.messages.length === 0) {
+      return;
+    }
+    const emptyExisting = sessions.find((s) => s.messages.length === 0);
+    if (emptyExisting) {
+      setActiveChatId(emptyExisting.id);
+      return;
+    }
     const newId = generateSafeId();
     const newSession: ChatSession = {
       id: newId,
@@ -303,7 +218,7 @@ export default function Home() {
       return updated;
     });
     setActiveChatId(newId);
-  }, []);
+  }, [sessions]);
 
   const deleteChat = useCallback((id: string) => {
     setSessions((prev) => {
@@ -351,7 +266,53 @@ export default function Home() {
         timestamp: currentTime,
       };
 
-      setMessages((prev) => [...prev, userMsg, loadingMsg]);
+      let targetSessionId = activeChatIdRef.current;
+      const titleText = question.length > 32 ? question.slice(0, 32) + "..." : question;
+
+      if (!targetSessionId) {
+        targetSessionId = generateSafeId();
+        const newSession: ChatSession = {
+          id: targetSessionId,
+          title: titleText,
+          messages: [userMsg, loadingMsg],
+          createdAt: Date.now(),
+        };
+        setActiveChatId(targetSessionId);
+        activeChatIdRef.current = targetSessionId;
+        setSessions((prev) => {
+          const updated = [newSession, ...prev];
+          saveSessionsToStorage(updated);
+          return updated;
+        });
+      } else {
+        setSessions((prev) => {
+          const activeIdx = prev.findIndex((s) => s.id === targetSessionId);
+          if (activeIdx === -1) {
+            const newSession: ChatSession = {
+              id: targetSessionId!,
+              title: titleText,
+              messages: [userMsg, loadingMsg],
+              createdAt: Date.now(),
+            };
+            const updated = [newSession, ...prev];
+            saveSessionsToStorage(updated);
+            return updated;
+          }
+
+          const session = prev[activeIdx];
+          const updatedMsgs = [...session.messages, userMsg, loadingMsg];
+          const updatedSession: ChatSession = {
+            ...session,
+            messages: updatedMsgs,
+            title: session.messages.length === 0 ? titleText : session.title,
+          };
+          const updated = [...prev];
+          updated[activeIdx] = updatedSession;
+          saveSessionsToStorage(updated);
+          return updated;
+        });
+      }
+
       setInput("");
       setIsLoading(true);
 
@@ -376,27 +337,44 @@ export default function Home() {
           chunksCount: data.source === "rag" ? 5 : undefined,
         };
 
-        setMessages((prev) =>
-          prev.map((m) => (m.id === loadingMsg.id ? assistantMsg : m))
-        );
+        setSessions((prev) => {
+          const activeIdx = prev.findIndex((s) => s.id === targetSessionId);
+          if (activeIdx === -1) return prev;
+          const session = prev[activeIdx];
+          const updatedMsgs = session.messages.map((m) =>
+            m.id === loadingMsg.id ? assistantMsg : m
+          );
+          const updated = [...prev];
+          updated[activeIdx] = { ...session, messages: updatedMsgs };
+          saveSessionsToStorage(updated);
+          return updated;
+        });
       } catch {
-        setMessages((prev) =>
-          prev.map((m) =>
+        setSessions((prev) => {
+          const activeIdx = prev.findIndex((s) => s.id === targetSessionId);
+          if (activeIdx === -1) return prev;
+          const session = prev[activeIdx];
+          const updatedMsgs = session.messages.map((m) =>
             m.id === loadingMsg.id
               ? {
                   ...m,
                   isLoading: false,
-                  content: "⚠️ Failed to connect to the Coretext backend service. Please check that FastAPI is running on port 8000.",
+                  content:
+                    "⚠️ Failed to connect to the Coretext backend service. Please check that FastAPI is running on port 8000.",
                   source: "llm" as const,
                 }
               : m
-          )
-        );
+          );
+          const updated = [...prev];
+          updated[activeIdx] = { ...session, messages: updatedMsgs };
+          saveSessionsToStorage(updated);
+          return updated;
+        });
       } finally {
         setIsLoading(false);
       }
     },
-    [input, isLoading, userId, setMessages]
+    [input, isLoading, userId]
   );
 
   const handleWebSearchFallback = useCallback(
@@ -408,25 +386,33 @@ export default function Home() {
 
   const handleDocumentUploaded = useCallback(
     (filename: string, chunks: number, sizeMb: string) => {
-      setDocuments((prev) => {
-        if (prev.some((d) => d.filename === filename)) return prev;
-        return [
-          {
-            filename,
-            chunks: chunks || 120,
-            sizeMb: sizeMb || "2.0 MB",
-            uploadDate: "Today",
-          },
-          ...prev,
-        ];
+      const uploadDate = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       });
+      const newDoc: DocumentInfo = {
+        filename,
+        chunks: chunks || 0,
+        sizeMb: sizeMb || "1.0 MB",
+        uploadDate,
+      };
+      setDocuments((prev) => {
+        const filtered = prev.filter((d) => d.filename !== filename);
+        return [newDoc, ...filtered];
+      });
+      saveDocMeta(userId, filename, { chunks, sizeMb, uploadDate });
     },
-    []
+    [userId]
   );
 
-  const handleDocumentDeleted = useCallback((filename: string) => {
-    setDocuments((prev) => prev.filter((d) => d.filename !== filename));
-  }, []);
+  const handleDocumentDeleted = useCallback(
+    (filename: string) => {
+      setDocuments((prev) => prev.filter((d) => d.filename !== filename));
+      removeDocMeta(userId, filename);
+    },
+    [userId]
+  );
 
   const handleUseInChat = useCallback(
     (filename: string) => {
@@ -464,7 +450,7 @@ export default function Home() {
       {/* ── Main Chat Area ───────────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         <ChatHeader
-          title={activeSession?.title || "What is RAG and how does it work?"}
+          title={activeSession?.title || "New Chat"}
           docCount={documents.length}
           onOpenDocuments={() => setDocumentsDrawerOpen(true)}
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}

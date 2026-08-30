@@ -62,6 +62,37 @@ class TestAPIGuardrails(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("does not match actual file header signature", response.json()["detail"])
 
+    def test_list_documents_empty_session(self):
+        from unittest.mock import patch
+        with patch("rag.vector_store.list_documents_info", return_value=[]):
+            response = self.client.get("/api/documents?session_id=empty-session-123")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["session_id"], "empty-session-123")
+            self.assertEqual(data["documents"], [])
+            self.assertEqual(data["items"], [])
+
+    def test_list_documents_populated_session(self):
+        from unittest.mock import patch
+        mock_docs = [
+            {"filename": "guide.pdf", "chunks": 12},
+            {"filename": "notes.txt", "chunks": 4},
+        ]
+        with patch("rag.vector_store.list_documents_info", return_value=mock_docs):
+            response = self.client.get("/api/documents?session_id=populated-session-456")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["session_id"], "populated-session-456")
+            self.assertEqual(data["documents"], ["guide.pdf", "notes.txt"])
+            self.assertEqual(
+                data["items"],
+                [
+                    {"filename": "guide.pdf", "chunks": 12},
+                    {"filename": "notes.txt", "chunks": 4},
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

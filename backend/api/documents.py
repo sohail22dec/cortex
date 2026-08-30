@@ -25,13 +25,20 @@ class UploadResponse(BaseModel):
     message: str
 
 
+class DocumentItem(BaseModel):
+    filename: str
+    chunks: int = 0
+
+
 class DocumentListResponse(BaseModel):
     session_id: str
     documents: list[str]
+    items: list[DocumentItem] = []
 
 
 class DeleteResponse(BaseModel):
     message: str
+
 
 
 @router.post(
@@ -102,8 +109,11 @@ async def upload_document(
 
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(session_id: str):
-    docs = await asyncio.to_thread(vs.list_document_names, session_id)
-    return DocumentListResponse(session_id=session_id, documents=docs)
+    items = await asyncio.to_thread(vs.list_documents_info, session_id)
+    doc_names = [item["filename"] for item in items]
+    doc_items = [DocumentItem(filename=item["filename"], chunks=item["chunks"]) for item in items]
+    return DocumentListResponse(session_id=session_id, documents=doc_names, items=doc_items)
+
 
 
 @router.delete("/documents/{filename}", response_model=DeleteResponse)
