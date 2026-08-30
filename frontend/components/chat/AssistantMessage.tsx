@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sparkles, Copy, Check } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 import { Sources } from "./Sources";
 import { MessageActions } from "./MessageActions";
+import { CoretextLogo } from "@/components/ui/CoretextLogo";
 
 export interface MessageData {
   id: string;
@@ -163,10 +164,8 @@ export function AssistantMessage({
 }: AssistantMessageProps) {
   return (
     <div className="flex items-start gap-3.5 mb-6 animate-fade-in group">
-      {/* Brand Sparkle Avatar */}
-      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#6d5dfc] to-[#9d93ff] flex items-center justify-center text-white shadow-md shadow-[#6d5dfc]/20 shrink-0 mt-0.5">
-        <Sparkles className="w-4 h-4 fill-white" />
-      </div>
+      {/* Brand Logo Avatar */}
+      <CoretextLogo size="sm" className="mt-0.5" />
 
       {/* Main Message Content */}
       <div className="flex-1 min-w-0">

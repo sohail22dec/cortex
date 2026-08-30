@@ -17,7 +17,6 @@ interface SidebarProps {
   onDeleteChat: (id: string) => void;
   onRenameChat?: (id: string, newTitle: string) => void;
   isOpen: boolean;
-  onToggleOpen: () => void;
 }
 
 export function Sidebar({
@@ -29,7 +28,6 @@ export function Sidebar({
   onDeleteChat,
   onRenameChat,
   isOpen,
-  onToggleOpen,
 }: SidebarProps) {
   return (
     <aside
@@ -38,10 +36,7 @@ export function Sidebar({
         isOpen ? "w-[280px] min-w-[280px]" : "w-0 min-w-0 border-r-0 overflow-hidden"
       )}
     >
-      <AppLogo
-        onToggleSidebar={onToggleOpen}
-        isCollapsed={!isOpen}
-      />
+      <AppLogo isCollapsed={!isOpen} />
 
       <NewChatButton
         onClick={onNewChat}

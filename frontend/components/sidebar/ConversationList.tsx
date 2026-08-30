@@ -22,9 +22,9 @@ export function ConversationList({
   isCollapsed = false,
 }: ConversationListProps) {
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 w-full min-w-0 overflow-hidden">
       {!isCollapsed && (
-        <div className="px-4 pt-2.5 pb-1.5 flex items-center justify-between">
+        <div className="px-4 pt-3 pb-1.5 flex items-center justify-between shrink-0">
           <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
             Conversations
           </span>
@@ -34,8 +34,8 @@ export function ConversationList({
         </div>
       )}
 
-      <ScrollArea className="flex-1 px-2 py-1">
-        <div className="flex flex-col gap-1">
+      <ScrollArea className="flex-1 px-3 py-1 w-full min-w-0">
+        <div className="flex flex-col gap-1 w-full min-w-0">
           {conversations.length === 0 ? (
             <div className="py-8 text-center text-xs text-zinc-500 italic px-2">
               No chats yet. Start a new chat!

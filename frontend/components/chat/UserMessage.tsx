@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface UserMessageProps {
   content: string;
@@ -25,8 +25,7 @@ export function UserMessage({ content, timestamp }: UserMessageProps) {
 
       {/* User Avatar */}
       <Avatar className="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0 mb-0.5">
-        <AvatarImage src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" />
-        <AvatarFallback className="bg-[#161f30] text-[#6d5dfc] text-xs font-semibold">
+        <AvatarFallback className="bg-gradient-to-br from-[#6d5dfc]/30 to-[#161f30] text-[#9d93ff] text-xs font-semibold">
           U
         </AvatarFallback>
       </Avatar>

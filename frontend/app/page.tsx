@@ -459,7 +459,6 @@ export default function Home() {
         onDeleteChat={deleteChat}
         onRenameChat={renameChat}
         isOpen={sidebarOpen}
-        onToggleOpen={() => setSidebarOpen((prev) => !prev)}
       />
 
       {/* ── Main Chat Area ───────────────────────────────────────────────────── */}

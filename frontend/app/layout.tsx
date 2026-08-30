@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   description:
     "Ask questions about your knowledge base with transparent Corrective RAG, real-time web search, and AI reasoning.",
   keywords: ["RAG", "Corrective RAG", "Coretext", "AI", "Agentic RAG", "Knowledge Base"],
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

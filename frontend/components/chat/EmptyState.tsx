@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { Sparkles, Upload, ArrowRight, FileText, Brain, Globe } from "lucide-react";
+import { Upload, ArrowRight, FileText, Brain, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CoretextLogo } from "@/components/ui/CoretextLogo";
 
 interface EmptyStateProps {
   onSelectPrompt: (prompt: string) => void;
@@ -24,9 +25,7 @@ export function EmptyState({
   return (
     <div className="flex-1 flex flex-col items-center justify-center py-10 px-4 max-w-[760px] mx-auto text-center animate-fade-in select-none">
       {/* Brand Icon */}
-      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#6d5dfc] to-[#9d93ff] flex items-center justify-center text-white shadow-xl shadow-[#6d5dfc]/30 mb-5">
-        <Sparkles className="w-7 h-7 fill-white" />
-      </div>
+      <CoretextLogo size="lg" className="mb-5" />
 
       {/* Hero Title */}
       <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
