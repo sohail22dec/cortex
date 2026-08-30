@@ -25,6 +25,9 @@ app = FastAPI(
 origins = [
     "http://localhost:3000",
     "http://localhost:3001",
+    "http://3.25.64.38:3001",
+    "https://cortex-ai.duckdns.org",
+    "http://cortex-ai.duckdns.org",
     "https://cortex-lime-zeta.vercel.app",
 ]
 

@@ -1,17 +1,26 @@
 "use client";
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import ChatMessage, { Message } from "./components/ChatMessage";
-import ChatInput from "./components/ChatInput";
-import Sidebar from "./components/Sidebar";
+import { Sidebar } from "@/components/sidebar/Sidebar";
+import { ChatHeader } from "@/components/chat/ChatHeader";
+import { MessageList } from "@/components/chat/MessageList";
+import { ChatComposer } from "@/components/chat/ChatComposer";
+import { DocumentsDrawer } from "@/components/documents/DocumentsDrawer";
+import { MessageData } from "@/components/chat/AssistantMessage";
+import { ConversationData } from "@/components/sidebar/ConversationItem";
+import { DocumentInfo } from "@/components/documents/DocumentPreview";
+import { toast } from "sonner";
 
 export interface ChatSession {
   id: string;
   title: string;
-  messages: Message[];
+  messages: MessageData[];
   createdAt: number;
+  timestampStr?: string;
 }
 
-// ── Safe UUID generation (crypto.randomUUID is undefined on insecure HTTP origins in some browsers) ──
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 function generateSafeId(): string {
   if (typeof window !== "undefined" && window.crypto && typeof window.crypto.randomUUID === "function") {
     try {
@@ -23,10 +32,9 @@ function generateSafeId(): string {
   return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).substring(2, 9);
 }
 
-// ── Persistent State ────────────────────────────────────────────────────────
 function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "ssr";
-  const key = "cortex_user_id";
+  const key = "coretext_user_id";
   try {
     let id = localStorage.getItem(key);
     if (!id) {
@@ -39,33 +47,150 @@ function getOrCreateUserId(): string {
   }
 }
 
-function loadSessions(): ChatSession[] {
-  if (typeof window === "undefined") return [];
+// Initial mock conversations matching the design mockup for high-fidelity demonstration
+const INITIAL_DEMO_SESSIONS: ChatSession[] = [
+  {
+    id: "demo-rag-1",
+    title: "What is RAG and how does it work?",
+    createdAt: Date.now() - 1000 * 60 * 5, // 5 min ago
+    timestampStr: "2:31 PM",
+    messages: [
+      {
+        id: "msg-user-1",
+        role: "user",
+        content: "What is RAG and how does it work?",
+        timestamp: "2:31 PM",
+      },
+      {
+        id: "msg-assistant-1",
+        role: "assistant",
+        content: `RAG (Retrieval-Augmented Generation) is a technique that combines the power of information retrieval and large language models to generate more accurate and up-to-date responses.
+
+Here's how it works:
+
+1. **Retrieval**: When a user asks a question, the system first retrieves relevant documents or passages from a knowledge base.
+2. **Augmentation**: These retrieved documents are then provided as context to the language model.
+3. **Generation**: The language model uses this context to generate a response that is more informed, accurate, and less likely to hallucinate.
+
+This approach helps in grounding the model's responses in real data, making it ideal for enterprise applications and domain-specific knowledge.`,
+        source: "rag",
+        citations: [
+          "RAG Paper (2020).pdf",
+          "https://python.langchain.com/docs/concepts/rag",
+          "https://docs.llamaindex.ai/en/stable/getting_started/concepts/",
+          "Supabase pgvector Guide.pdf",
+          "https://groq.com/docs",
+        ],
+        timestamp: "2:31 PM",
+        chunksCount: 5,
+      },
+    ],
+  },
+  {
+    id: "demo-rag-2",
+    title: "Explain LangGraph with example",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24, // Yesterday
+    timestampStr: "Yesterday",
+    messages: [],
+  },
+  {
+    id: "demo-rag-3",
+    title: "Best practices for chunking documents",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 4,
+    timestampStr: "May 26",
+    messages: [],
+  },
+  {
+    id: "demo-rag-4",
+    title: "How to evaluate RAG systems?",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 6,
+    timestampStr: "May 24",
+    messages: [],
+  },
+  {
+    id: "demo-rag-5",
+    title: "Difference between RAG and Fine-tuning",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 7,
+    timestampStr: "May 23",
+    messages: [],
+  },
+  {
+    id: "demo-rag-6",
+    title: "Agentic RAG Architecture",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 9,
+    timestampStr: "May 21",
+    messages: [],
+  },
+  {
+    id: "demo-rag-7",
+    title: "Vector DB comparison",
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 10,
+    timestampStr: "May 20",
+    messages: [],
+  },
+];
+
+const INITIAL_DOCUMENTS: DocumentInfo[] = [
+  {
+    filename: "RAG_Research_Paper.pdf",
+    chunks: 128,
+    sizeMb: "2.4 MB",
+    uploadDate: "May 28, 2025",
+  },
+  {
+    filename: "LangChain_Documentation.pdf",
+    chunks: 256,
+    sizeMb: "3.1 MB",
+    uploadDate: "May 27, 2025",
+  },
+  {
+    filename: "LlamaIndex_Guide.pdf",
+    chunks: 198,
+    sizeMb: "2.7 MB",
+    uploadDate: "May 25, 2025",
+  },
+  {
+    filename: "Vector_Databases_Overview.pdf",
+    chunks: 96,
+    sizeMb: "1.8 MB",
+    uploadDate: "May 20, 2025",
+  },
+  {
+    filename: "AI_Agents_The_Complete_Guide.pdf",
+    chunks: 310,
+    sizeMb: "4.2 MB",
+    uploadDate: "May 18, 2025",
+  },
+];
+
+function loadSavedSessions(): ChatSession[] {
+  if (typeof window === "undefined") return INITIAL_DEMO_SESSIONS;
   try {
-    const stored = localStorage.getItem("cortex_sessions");
-    return stored ? JSON.parse(stored) : [];
+    const stored = localStorage.getItem("coretext_sessions");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    return INITIAL_DEMO_SESSIONS;
   } catch {
-    return [];
+    return INITIAL_DEMO_SESSIONS;
   }
 }
 
-function saveSessions(sessions: ChatSession[]) {
+function saveSessionsToStorage(sessions: ChatSession[]) {
   if (typeof window !== "undefined") {
     try {
-      localStorage.setItem("cortex_sessions", JSON.stringify(sessions));
+      localStorage.setItem("coretext_sessions", JSON.stringify(sessions));
     } catch {
       // ignore
     }
   }
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 export default function Home() {
   const [userId, setUserId] = useState<string>("ssr");
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ChatSession[]>(INITIAL_DEMO_SESSIONS);
+  const [activeChatId, setActiveChatId] = useState<string | null>("demo-rag-1");
   const activeChatIdRef = useRef(activeChatId);
 
   useEffect(() => {
@@ -74,78 +199,95 @@ export default function Home() {
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [documents, setDocuments] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [documents, setDocuments] = useState<DocumentInfo[]>(INITIAL_DOCUMENTS);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [documentsDrawerOpen, setDocumentsDrawerOpen] = useState(false);
 
-  // Initialize on mount via queueMicrotask/hydration effect
+  // Initialize persistent state after hydration using microtask to avoid cascading renders
   useEffect(() => {
     const id = getOrCreateUserId();
-    const loaded = loadSessions();
+    const loadedSessions = loadSavedSessions();
     queueMicrotask(() => {
       setUserId(id);
-      setSessions(loaded);
-      if (loaded.length > 0) {
-        setActiveChatId(loaded[0].id);
+      setSessions(loadedSessions);
+      if (loadedSessions.length > 0) {
+        setActiveChatId(loadedSessions[0].id);
       }
     });
   }, []);
 
-  // Load documents for this user (global knowledge base)
+  // Sync documents from backend
   useEffect(() => {
     if (userId === "ssr") return;
     fetch(`${API_URL}/api/documents?session_id=${userId}`)
       .then((r) => r.json())
-      .then((d) => setDocuments(d.documents || []))
-      .catch(() => { });
+      .then((data) => {
+        if (data.documents && Array.isArray(data.documents) && data.documents.length > 0) {
+          const backendDocs: DocumentInfo[] = data.documents.map((name: string) => {
+            const existing = INITIAL_DOCUMENTS.find((d) => d.filename === name);
+            return {
+              filename: name,
+              chunks: existing?.chunks || 128,
+              sizeMb: existing?.sizeMb || "2.4 MB",
+              uploadDate: existing?.uploadDate || "Today",
+            };
+          });
+          setDocuments(backendDocs);
+        }
+      })
+      .catch(() => {});
   }, [userId]);
 
-  // Derived active messages
-  const activeSession = useMemo(() => sessions.find(s => s.id === activeChatId), [sessions, activeChatId]);
-  const messages = useMemo(() => activeSession ? activeSession.messages : [], [activeSession]);
+  // Active session and messages
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeChatId),
+    [sessions, activeChatId]
+  );
+  const messages = useMemo(
+    () => (activeSession ? activeSession.messages : []),
+    [activeSession]
+  );
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // Update session helper
+  const setMessages = useCallback(
+    (newMessages: MessageData[] | ((prev: MessageData[]) => MessageData[])) => {
+      setSessions((prevSessions) => {
+        const activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
 
-  // Session state updates
-  const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
-    setSessions((prevSessions) => {
-      const activeIdx = prevSessions.findIndex((s) => s.id === activeChatIdRef.current);
+        if (activeIdx === -1) {
+          const initialMsgs = typeof newMessages === "function" ? newMessages([]) : newMessages;
+          const newSession: ChatSession = {
+            id: generateSafeId(),
+            title: initialMsgs.length > 0 ? initialMsgs[0].content.slice(0, 32) : "New Chat",
+            messages: initialMsgs,
+            createdAt: Date.now(),
+          };
+          const updated = [newSession, ...prevSessions];
+          saveSessionsToStorage(updated);
+          setTimeout(() => setActiveChatId(newSession.id), 0);
+          return updated;
+        } else {
+          const session = prevSessions[activeIdx];
+          const updatedMsgs =
+            typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
+          const updatedSession: ChatSession = { ...session, messages: updatedMsgs };
 
-      let updatedSession: ChatSession;
-      if (activeIdx === -1) {
-        // Create new session lazily
-        const initialMsgs = typeof newMessages === "function" ? newMessages([]) : newMessages;
-        updatedSession = {
-          id: generateSafeId(),
-          title: initialMsgs.length > 0 ? initialMsgs[0].content.slice(0, 30) + "..." : "New Chat",
-          messages: initialMsgs,
-          createdAt: Date.now(),
-        };
-        const updated = [updatedSession, ...prevSessions];
-        saveSessions(updated);
-        setTimeout(() => setActiveChatId(updatedSession.id), 0); // Async update to avoid render conflict
-        return updated;
-      } else {
-        const session = prevSessions[activeIdx];
-        const updatedMsgs = typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
-        updatedSession = { ...session, messages: updatedMsgs };
+          if (session.messages.length === 0 && updatedMsgs.length > 0 && updatedMsgs[0].role === "user") {
+            updatedSession.title =
+              updatedMsgs[0].content.length > 32
+                ? updatedMsgs[0].content.slice(0, 32) + "..."
+                : updatedMsgs[0].content;
+          }
 
-        // Update title if first message
-        if (session.messages.length === 0 && updatedMsgs.length > 0 && updatedMsgs[0].role === "user") {
-          updatedSession.title = updatedMsgs[0].content.slice(0, 30) + "...";
+          const updated = [...prevSessions];
+          updated[activeIdx] = updatedSession;
+          saveSessionsToStorage(updated);
+          return updated;
         }
-
-        const updated = [...prevSessions];
-        updated[activeIdx] = updatedSession;
-        saveSessions(updated);
-        return updated;
-      }
-    });
-  }, [activeChatIdRef]);
+      });
+    },
+    []
+  );
 
   const createNewChat = useCallback(() => {
     const newId = generateSafeId();
@@ -155,237 +297,207 @@ export default function Home() {
       messages: [],
       createdAt: Date.now(),
     };
-    const updated = [newSession, ...sessions];
-    setSessions(updated);
-    saveSessions(updated);
+    setSessions((prev) => {
+      const updated = [newSession, ...prev];
+      saveSessionsToStorage(updated);
+      return updated;
+    });
     setActiveChatId(newId);
-  }, [sessions]);
+  }, []);
 
   const deleteChat = useCallback((id: string) => {
-    const updated = sessions.filter(s => s.id !== id);
-    setSessions(updated);
-    saveSessions(updated);
-    if (activeChatId === id) {
-      setActiveChatId(updated.length > 0 ? updated[0].id : null);
-    }
-  }, [sessions, activeChatId]);
-
-  const handleSend = useCallback(async (customInput?: string) => {
-    const question = (typeof customInput === "string" ? customInput : input).trim();
-    if (!question || isLoading) return;
-
-    // If there is no active chat and user sends a message, activeChatId might be null.
-    // The setMessages logic handles lazy creation.
-
-    const userMsg: Message = {
-      id: generateSafeId(),
-      role: "user",
-      content: question,
-    };
-    const loadingMsg: Message = {
-      id: generateSafeId(),
-      role: "assistant",
-      content: "",
-      isLoading: true,
-    };
-
-    setMessages((prev) => [...prev, userMsg, loadingMsg]);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      const res = await fetch(`${API_URL}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Passing userId as session_id allows backend to access the global knowledge base!
-        body: JSON.stringify({ message: question, session_id: userId }),
+    setSessions((prev) => {
+      const updated = prev.filter((s) => s.id !== id);
+      saveSessionsToStorage(updated);
+      return updated;
+    });
+    if (activeChatIdRef.current === id) {
+      setSessions((prev) => {
+        const remaining = prev.filter((s) => s.id !== id);
+        setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
+        return remaining;
       });
-      const data = await res.json();
+    }
+  }, []);
 
-      const assistantMsg: Message = {
-        id: loadingMsg.id,
-        role: "assistant",
-        content: data.answer || "Sorry, something went wrong.",
-        source: data.source,
-        citations: data.citations || [],
-        suggest_web_search: data.suggest_web_search || false,
-        question: question,
+  const renameChat = useCallback((id: string, newTitle: string) => {
+    setSessions((prev) => {
+      const updated = prev.map((s) => (s.id === id ? { ...s, title: newTitle } : s));
+      saveSessionsToStorage(updated);
+      return updated;
+    });
+    toast.success("Chat renamed");
+  }, []);
+
+  const handleSend = useCallback(
+    async (customInput?: string) => {
+      const question = (typeof customInput === "string" ? customInput : input).trim();
+      if (!question || isLoading) return;
+
+      const currentTime = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+      const userMsg: MessageData = {
+        id: generateSafeId(),
+        role: "user",
+        content: question,
+        timestamp: currentTime,
       };
 
-      setMessages((prev) =>
-        prev.map((m) => (m.id === loadingMsg.id ? assistantMsg : m))
-      );
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === loadingMsg.id
-            ? { ...m, isLoading: false, content: "⚠️ Failed to reach the backend. Is it running?", source: "llm" as const }
-            : m
-        )
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, isLoading, userId, setMessages]);
+      const loadingMsg: MessageData = {
+        id: generateSafeId(),
+        role: "assistant",
+        content: "",
+        isLoading: true,
+        timestamp: currentTime,
+      };
 
-  const handleWebSearchFallback = useCallback((question: string) => {
-    handleSend(`Search the web for ${question}`);
-  }, [handleSend]);
+      setMessages((prev) => [...prev, userMsg, loadingMsg]);
+      setInput("");
+      setIsLoading(true);
 
-  const handleDocumentUploaded = useCallback((filename: string) => {
-    setDocuments((prev) => prev.includes(filename) ? prev : [...prev, filename]);
-  }, []);
+      try {
+        const res = await fetch(`${API_URL}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: question, session_id: userId }),
+        });
+
+        const data = await res.json();
+
+        const assistantMsg: MessageData = {
+          id: loadingMsg.id,
+          role: "assistant",
+          content: data.answer || "Sorry, no answer could be synthesized.",
+          source: (data.source as "rag" | "llm" | "web_search") || "llm",
+          citations: data.citations || [],
+          suggest_web_search: data.suggest_web_search || false,
+          question: question,
+          timestamp: currentTime,
+          chunksCount: data.source === "rag" ? 5 : undefined,
+        };
+
+        setMessages((prev) =>
+          prev.map((m) => (m.id === loadingMsg.id ? assistantMsg : m))
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === loadingMsg.id
+              ? {
+                  ...m,
+                  isLoading: false,
+                  content: "⚠️ Failed to connect to the Coretext backend service. Please check that FastAPI is running on port 8000.",
+                  source: "llm" as const,
+                }
+              : m
+          )
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [input, isLoading, userId, setMessages]
+  );
+
+  const handleWebSearchFallback = useCallback(
+    (question: string) => {
+      handleSend(`Search the web for ${question}`);
+    },
+    [handleSend]
+  );
+
+  const handleDocumentUploaded = useCallback(
+    (filename: string, chunks: number, sizeMb: string) => {
+      setDocuments((prev) => {
+        if (prev.some((d) => d.filename === filename)) return prev;
+        return [
+          {
+            filename,
+            chunks: chunks || 120,
+            sizeMb: sizeMb || "2.0 MB",
+            uploadDate: "Today",
+          },
+          ...prev,
+        ];
+      });
+    },
+    []
+  );
 
   const handleDocumentDeleted = useCallback((filename: string) => {
-    setDocuments((prev) => prev.filter((d) => d !== filename));
+    setDocuments((prev) => prev.filter((d) => d.filename !== filename));
   }, []);
 
-  return (
-    <div className="flex h-screen overflow-hidden bg-bg-base">
-      <Sidebar
-        sidebarOpen={sidebarOpen}
-        userId={userId}
-        documents={documents}
-        isUploading={isUploading}
-        setIsUploading={setIsUploading}
-        onDocumentUploaded={handleDocumentUploaded}
-        onDocumentDeleted={handleDocumentDeleted}
+  const handleUseInChat = useCallback(
+    (filename: string) => {
+      setInput(`Summarize and explain the key findings in ${filename}`);
+    },
+    []
+  );
 
-        sessions={sessions}
+  // Map sessions to ConversationData
+  const conversations: ConversationData[] = useMemo(
+    () =>
+      sessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        createdAt: s.createdAt,
+        timestampStr: s.timestampStr,
+      })),
+    [sessions]
+  );
+
+  return (
+    <div className="flex h-screen w-screen overflow-hidden bg-[#080b11] text-zinc-100 antialiased">
+      {/* ── Left Sidebar ──────────────────────────────────────────────────────── */}
+      <Sidebar
+        conversations={conversations}
         activeChatId={activeChatId}
+        userId={userId}
         onSelectChat={setActiveChatId}
         onNewChat={createNewChat}
         onDeleteChat={deleteChat}
+        onRenameChat={renameChat}
+        isOpen={sidebarOpen}
       />
 
-      {/* ── Main chat area ────────────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex items-center justify-between px-5 py-3 bg-bg-base/80 backdrop-blur-md border-b border-border/50 shrink-0 sticky top-0 z-50">
-          <div className="flex items-center z-10">
-            <button
-              id="toggle-sidebar"
-              onClick={() => setSidebarOpen((o) => !o)}
-              aria-label="Toggle sidebar"
-              className="group flex items-center p-1.5 rounded-md bg-transparent border border-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-          </div>
+      {/* ── Main Chat Area ───────────────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+        <ChatHeader
+          title={activeSession?.title || "What is RAG and how does it work?"}
+          docCount={documents.length}
+          onOpenDocuments={() => setDocumentsDrawerOpen(true)}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          sidebarOpen={sidebarOpen}
+        />
 
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5 z-0">
-            <h2 className="text-[14px] font-medium text-text-primary truncate max-w-[200px] md:max-w-[400px]">
-              {activeSession ? activeSession.title : "New Chat"}
-            </h2>
-            <div className="h-3.5 w-[1px] bg-border/80"></div>
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent-soft border border-border-accent/30 text-[10px] text-accent-primary font-medium tracking-wide">
-              {documents.length > 0
-                ? `📚 ${documents.length} Docs Indexed`
-                : '🧠 Base Knowledge'}
-            </span>
-          </div>
+        <MessageList
+          messages={messages}
+          onSelectPrompt={(prompt) => handleSend(prompt)}
+          onOpenDocuments={() => setDocumentsDrawerOpen(true)}
+          onWebSearchFallback={handleWebSearchFallback}
+        />
 
-          <div className="w-[30px] z-10" /> {/* Spacer to balance the flex-between layout */}
-        </header>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 pt-6 pb-2 flex flex-col relative">
-          <div className="flex-1 max-w-[760px] w-full mx-auto relative z-10 flex flex-col justify-start">
-            {messages.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-start pt-12 md:pt-20 px-4 py-8 fade-in select-none">
-                {/* Visual Header */}
-                <div className="w-14 h-14 rounded-2xl bg-accent-primary flex items-center justify-center text-[26px] text-white shadow-glow mb-6 animate-pulse">
-                  ✦
-                </div>
-
-                <h2 className="glow-text text-3xl md:text-4xl font-extrabold text-center tracking-tight mb-2">
-                  Cortex
-                </h2>
-                <p className="text-text-secondary text-sm md:text-base text-center max-w-[500px] mb-10 leading-relaxed">
-                  Your premium multi-agent assistant for document analysis, general knowledge, and real-time web search.
-                </p>
-
-                {/* Responsive 3-Column Glassmorphic Feature Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mb-10">
-                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
-                    <div className="text-3xl mb-3 text-emerald-400">📄</div>
-                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">Document RAG</h3>
-                    <p className="text-text-muted text-[12px] leading-relaxed">
-                      Upload PDFs to your knowledge base to query their contents.
-                    </p>
-                  </div>
-                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
-                    <div className="text-3xl mb-3 text-purple-400">🧠</div>
-                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">General Knowledge</h3>
-                    <p className="text-text-muted text-[12px] leading-relaxed">
-                      Ask questions, debug code, or brainstorm ideas using LLMs.
-                    </p>
-                  </div>
-                  <div className="glass p-5 rounded-md flex flex-col items-center text-center transition-all duration-300 hover:border-border-accent hover:scale-[1.02]">
-                    <div className="text-3xl mb-3 text-amber-400">🌐</div>
-                    <h3 className="text-text-primary text-[15px] font-semibold mb-1.5">Real-Time Search</h3>
-                    <p className="text-text-muted text-[12px] leading-relaxed">
-                      Search the web automatically to fetch live info.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Clickable Quick-Start Prompts */}
-                <div className="w-full max-w-[640px]">
-                  <p className="text-[11px] font-semibold text-text-muted uppercase tracking-[0.08em] text-center mb-3">
-                    Suggested Starter Prompts
-                  </p>
-                  <div className="flex flex-wrap gap-2.5 justify-center">
-                    {[
-                      "Explain how multi-agent RAG architectures work",
-                      "What are some interesting use cases for AI?",
-                      "Search the web for the latest artificial intelligence headlines",
-                    ].map((promptText, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          handleSend(promptText);
-                        }}
-                        className="px-4 py-2 bg-bg-elevated/40 hover:bg-accent-soft/30 hover:text-text-primary hover:border-border-accent border border-border text-[12px] text-text-secondary rounded-full cursor-pointer transition-all duration-200"
-                      >
-                        {promptText} →
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                {messages.map((msg) => (
-                  <ChatMessage key={msg.id} message={msg} onWebSearchFallback={handleWebSearchFallback} />
-                ))}
-                <div ref={messagesEndRef} />
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Input area */}
-        <div className="px-5 pt-2 pb-5 bg-bg-base shrink-0">
-          <div className="max-w-[760px] mx-auto">
-            <ChatInput
-              value={input}
-              onChange={setInput}
-              onSend={handleSend}
-              isLoading={isLoading}
-              hasDocuments={documents.length > 0}
-              placeholder="Ask anything..."
-            />
-            <p className="mt-2.5 text-[11px] text-text-muted/60 text-center tracking-wide">
-              Cortex can make mistakes. Verify important info.
-            </p>
-          </div>
-        </div>
+        <ChatComposer
+          value={input}
+          onChange={setInput}
+          onSend={handleSend}
+          isLoading={isLoading}
+          onOpenDocuments={() => setDocumentsDrawerOpen(true)}
+          hasDocuments={documents.length > 0}
+        />
       </main>
+
+      {/* ── Right Documents Drawer (Sheet) ───────────────────────────────────── */}
+      <DocumentsDrawer
+        open={documentsDrawerOpen}
+        onOpenChange={setDocumentsDrawerOpen}
+        documents={documents}
+        sessionId={userId}
+        onDocumentUploaded={handleDocumentUploaded}
+        onDocumentDeleted={handleDocumentDeleted}
+        onUseInChat={handleUseInChat}
+      />
     </div>
   );
 }

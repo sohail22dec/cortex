@@ -1,23 +1,34 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
 export const metadata: Metadata = {
-  title: "Cortex — Multi-Agent RAG Assistant",
+  title: "Coretext — Corrective RAG Assistant",
   description:
-    "Upload your documents and ask questions. Cortex intelligently routes your queries across RAG, direct LLM knowledge, and real-time web search.",
-  keywords: ["RAG", "AI", "document assistant", "multi-agent", "Groq", "Supabase"],
+    "Ask questions about your knowledge base with transparent Corrective RAG, real-time web search, and AI reasoning.",
+  keywords: ["RAG", "Corrective RAG", "Coretext", "AI", "Agentic RAG", "Knowledge Base"],
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      </head>
-      <body>{children}</body>
+    <html lang="en" className={`dark ${inter.variable}`}>
+      <body className="bg-[#080b11] text-zinc-100 font-sans antialiased overflow-hidden min-h-screen">
+        {children}
+        <Toaster position="bottom-right" richColors />
+      </body>
     </html>
   );
 }
