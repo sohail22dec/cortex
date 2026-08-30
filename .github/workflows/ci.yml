@@ -4,10 +4,12 @@ on:
   pull_request:
     branches:
       - main
+      - cortex-ui-redesign
   push:
     branches:
       - main
       - cortex-ui-redesign
+      - feat/*
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -38,6 +40,12 @@ jobs:
           uv sync
 
       - name: Run Pytest Test Suite
+        env:
+          GROQ_API_KEY: "mock-groq-key-for-ci"
+          TAVILY_API_KEY: "mock-tavily-key-for-ci"
+          SUPABASE_URL: "https://mock.supabase.co"
+          SUPABASE_KEY: "mock-supabase-key-for-ci"
+          GEMINI_API_KEY: "mock-gemini-key-for-ci"
         run: |
           cd backend
           uv run pytest tests/ -q
