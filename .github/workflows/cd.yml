@@ -36,17 +36,29 @@ jobs:
             echo "🚀 Starting Production Deployment on branch: ${TARGET_BRANCH}"
             echo "=================================================="
             
-            # Navigate to application directory
+            # Find and navigate to application directory (case-insensitive search)
             if [ -d "$HOME/Cortex" ]; then
               cd "$HOME/Cortex"
-            elif [ -d "/home/${{ secrets.EC2_USER }}/Cortex" ]; then
-              cd "/home/${{ secrets.EC2_USER }}/Cortex"
+            elif [ -d "$HOME/cortex" ]; then
+              cd "$HOME/cortex"
+            elif [ -f "$HOME/docker-compose.yml" ]; then
+              cd "$HOME"
+            elif [ -d "/var/www/cortex" ]; then
+              cd "/var/www/cortex"
             else
-              echo "❌ Error: Cortex directory not found on server!"
-              exit 1
+              # Search for docker-compose.yml in home directory
+              FOUND_DIR=$(find "$HOME" -maxdepth 2 -name "docker-compose.yml" -exec dirname {} \; | head -n 1)
+              if [ -n "$FOUND_DIR" ] && [ -d "$FOUND_DIR" ]; then
+                cd "$FOUND_DIR"
+              else
+                echo "❌ Current directory contents in $HOME:"
+                ls -la "$HOME"
+                echo "❌ Error: Cortex directory not found on server!"
+                exit 1
+              fi
             fi
             
-            echo "📂 Server directory: $(pwd)"
+            echo "📂 Active server directory: $(pwd)"
             
             # Fetch and checkout latest merged code
             echo "⬇️  Pulling latest changes from origin/${TARGET_BRANCH}..."
