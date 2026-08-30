@@ -3,18 +3,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") or "gsk_mock_fallback_key_for_ci_testing"
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY") or "tvly-mock-fallback-key-for-ci"
 GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "qwen/qwen3.6-27b")
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
 
 
 # Supabase (vector store + future auth & sessions)
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL") or "https://mockproject.supabase.co"
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or "mock-supabase-service-key"
 
 # Google Gemini (cloud embeddings — no local model, no RAM spikes)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "mock-gemini-key-for-ci"
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"  # 3072-dim, truncated to 768 via MRL
 
 # Chunking config
