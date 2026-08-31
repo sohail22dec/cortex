@@ -3,6 +3,7 @@ Groundedness Service — Independent semantic judge for factuality and anti-hall
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Literal, Tuple
 
@@ -29,25 +30,23 @@ class GroundednessEvaluation(BaseModel):
     )
 
 
-def _get_judge_llm():
-    """Initializes groundedness judge LLM with Gemini Flash-Lite, falling back to Groq if needed."""
-    try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_FAST_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.0,
-        )
-    except Exception as e:
-        logger.warning("Could not initialize Gemini judge LLM: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_FAST_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.0,
-        )
+# Initialize Gemini (primary) and Groq (fallback) structured judge models
+try:
+    _gemini_judge = ChatGoogleGenerativeAI(
+        model=config.GEMINI_FAST_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.0,
+        max_retries=0,
+    ).with_structured_output(GroundednessEvaluation)
+except Exception as e:
+    logger.warning("Could not initialize Gemini judge: %s", e)
+    _gemini_judge = None
 
-
-_judge_llm = _get_judge_llm()
-_structured_judge_llm = _judge_llm.with_structured_output(GroundednessEvaluation)
+_groq_judge = ChatGroq(
+    model=config.GROQ_FAST_MODEL,
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+).with_structured_output(GroundednessEvaluation)
 
 
 async def evaluate_groundedness_async(
@@ -56,7 +55,8 @@ async def evaluate_groundedness_async(
     answer: str,
 ) -> Tuple[bool, str]:
     """
-    Asynchronously evaluates whether the generated answer is strictly grounded in the provided context.
+    Asynchronously evaluates whether the generated answer is strictly grounded in the provided context
+    with instant Groq fallback.
     Returns (is_grounded, reason).
     """
     if not context or not answer:
@@ -84,11 +84,23 @@ async def evaluate_groundedness_async(
         ),
     ]
 
-    try:
-        result: GroundednessEvaluation = await _structured_judge_llm.ainvoke(messages)
-        is_grounded = result.is_grounded == "YES"
-        return is_grounded, result.reason
-    except Exception as e:
-        logger.warning("Groundedness evaluation error: %s. Defaulting to grounded.", e)
-        return True, "fallback"
+    result: GroundednessEvaluation | None = None
+
+    # 1. Attempt Gemini Primary
+    if _gemini_judge:
+        try:
+            result = await asyncio.wait_for(_gemini_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
+        except Exception as e:
+            logger.warning("Gemini groundedness judge failed or hit quota: %s. Falling back to Groq.", e)
+
+    # 2. Fallback to Groq if Gemini failed
+    if not result:
+        try:
+            result = await asyncio.wait_for(_groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
+        except Exception as e:
+            logger.warning("Groq groundedness judge fallback error: %s. Defaulting to grounded.", e)
+            return True, "fallback"
+
+    is_grounded = result.is_grounded == "YES"
+    return is_grounded, result.reason
 

@@ -17,24 +17,23 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def _get_generator_llm():
-    """Initializes generator LLM with Gemini 2.5 Flash, falling back to Groq if needed."""
-    try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_REASONING_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.2,
-        )
-    except Exception as e:
-        logger.warning("Could not initialize Gemini generator LLM: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_REASONING_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.2,
-        )
+# Initialize Gemini (primary) and Groq (fallback) generator models
+try:
+    _gemini_generator = ChatGoogleGenerativeAI(
+        model=config.GEMINI_REASONING_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.2,
+        max_retries=0,
+    )
+except Exception as e:
+    logger.warning("Could not initialize Gemini generator: %s", e)
+    _gemini_generator = None
 
-
-_generator_llm = _get_generator_llm()
+_groq_generator = ChatGroq(
+    model=config.GROQ_REASONING_MODEL,
+    api_key=config.GROQ_API_KEY,
+    temperature=0.2,
+)
 
 DIRECT_SYSTEM_PROMPT = """You are Cortex, an intelligent, helpful, and concise AI assistant.
 Answer the user's question directly, accurately, and politely in markdown.
@@ -69,7 +68,26 @@ def _clean_response(content: Any) -> str:
     else:
         text = str(content)
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    if "<think>" in cleaned and "</think>" not in cleaned:
+        cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL).strip()
     return cleaned if cleaned else text.strip()
+
+
+async def _ainvoke_generator(messages: list) -> str:
+    """Invokes primary Gemini generator, immediately falling back to Groq on failure/quota."""
+    if _gemini_generator:
+        try:
+            res = await _gemini_generator.ainvoke(messages)
+            return _clean_response(res.content)
+        except Exception as e:
+            logger.warning("Gemini generator failed or hit quota: %s. Falling back to Groq.", e)
+
+    try:
+        res = await _groq_generator.ainvoke(messages)
+        return _clean_response(res.content)
+    except Exception as e:
+        logger.error("Groq generator fallback failed: %s", e)
+        return "An error occurred while generating the answer. Please try again."
 
 
 def build_doc_context(
@@ -162,8 +180,7 @@ async def generate_rag_answer_async(
         SystemMessage(content=prompt),
         HumanMessage(content=f"Document Context:\n\n{context}\n\nQuestion: {question}"),
     ]
-    res = await _generator_llm.ainvoke(messages)
-    answer = _clean_response(str(res.content))
+    answer = await _ainvoke_generator(messages)
     sources = sorted(list({c.get("source", "Unknown") for c in chunks if c.get("source")}))
 
     return {
@@ -192,8 +209,7 @@ async def generate_web_answer_async(
         SystemMessage(content=WEB_SYSTEM_PROMPT),
         HumanMessage(content=f"Web Search Results:\n\n{context}\n\nQuestion: {question}"),
     ]
-    res = await _generator_llm.ainvoke(messages)
-    answer = _clean_response(str(res.content))
+    answer = await _ainvoke_generator(messages)
 
     return {
         "answer": answer,
@@ -221,8 +237,7 @@ async def generate_hybrid_answer_async(
         SystemMessage(content=HYBRID_SYSTEM_PROMPT),
         HumanMessage(content=f"Provided Sources:\n\n{combined_context}\n\nQuestion: {question}"),
     ]
-    res = await _generator_llm.ainvoke(messages)
-    answer = _clean_response(str(res.content))
+    answer = await _ainvoke_generator(messages)
 
     return {
         "answer": answer,
@@ -237,12 +252,7 @@ async def generate_direct_answer_async(question: str) -> Dict[str, Any]:
         SystemMessage(content=DIRECT_SYSTEM_PROMPT),
         HumanMessage(content=question),
     ]
-    try:
-        res = await _generator_llm.ainvoke(messages)
-        answer = _clean_response(res.content)
-    except Exception as e:
-        logger.warning("Direct answer synthesis error: %s. Using simple fallback.", e)
-        answer = "I am Cortex, an AI assistant. How can I help you today?"
+    answer = await _ainvoke_generator(messages)
 
     return {
         "answer": answer,

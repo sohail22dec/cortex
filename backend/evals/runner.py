@@ -149,6 +149,7 @@ async def run_evaluation_benchmark(
             "answer": exec_res["answer"][:100] + "..." if len(exec_res["answer"]) > 100 else exec_res["answer"],
         }
         detailed_results.append(record)
+        await asyncio.sleep(0.5)
 
     # Compute aggregates
     n = len(detailed_results) or 1

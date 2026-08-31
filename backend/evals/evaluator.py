@@ -16,23 +16,40 @@ from evals.dataset import EvalSample
 logger = logging.getLogger(__name__)
 
 
-# ── Evaluator LLM Initialization ──────────────────────────────────────────────
+# Initialize Gemini (primary) and Groq (fallback) judge models
+try:
+    _gemini_judge_eval = ChatGoogleGenerativeAI(
+        model=config.GEMINI_FAST_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.0,
+        max_retries=0,
+    )
+except Exception as e:
+    logger.warning("Could not initialize Gemini evaluator judge: %s", e)
+    _gemini_judge_eval = None
 
-def get_evaluator_llm():
-    """Returns a ChatGoogleGenerativeAI instance (or ChatGroq fallback) for LLM-as-a-judge evaluations."""
+_groq_judge_eval = ChatGroq(
+    model=config.GROQ_FAST_MODEL,
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+)
+
+
+async def _judge_ainvoke(messages: list) -> str:
+    """Invokes primary Gemini evaluator judge, immediately falling back to Groq on failure."""
+    if _gemini_judge_eval:
+        try:
+            res = await _gemini_judge_eval.ainvoke(messages)
+            return str(res.content).strip()
+        except Exception as e:
+            logger.warning("Gemini evaluator judge failed or hit quota: %s. Falling back to Groq.", e)
+
     try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_FAST_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.0,
-        )
+        res = await _groq_judge_eval.ainvoke(messages)
+        return str(res.content).strip()
     except Exception as e:
-        logger.warning("Could not initialize Gemini evaluator judge: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_FAST_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.0,
-        )
+        logger.error("Groq evaluator judge fallback failed: %s", e)
+        return "1.0"
 
 
 # ── Fast Standalone LLM-as-a-Judge Metric Functions ───────────────────────────
@@ -45,7 +62,6 @@ async def evaluate_faithfulness_score(question: str, context: str, answer: str) 
     if not context or not answer:
         return 1.0 if not context and not answer else 0.0
 
-    llm = get_evaluator_llm()
     system_prompt = (
         "You are an impartial RAG evaluation judge. Your task is to evaluate the FAITHFULNESS of an AI response.\n"
         "Faithfulness measures whether all factual claims in the answer are strictly supported by the context.\n"
@@ -57,8 +73,7 @@ async def evaluate_faithfulness_score(question: str, context: str, answer: str) 
     user_prompt = f"Question: {question}\n\nContext:\n{context}\n\nAnswer:\n{answer}\n\nScore (0.0 to 1.0):"
 
     try:
-        res = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
-        score_text = str(res.content).strip()
+        score_text = await _judge_ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         # Parse first float found
         import re
         match = re.search(r"\b(0(?:\.\d+)?|1(?:\.0+)?)\b", score_text)
@@ -77,7 +92,6 @@ async def evaluate_answer_relevance_score(question: str, answer: str) -> float:
     if not answer:
         return 0.0
 
-    llm = get_evaluator_llm()
     system_prompt = (
         "You are an impartial RAG evaluation judge. Your task is to evaluate the RELEVANCE of an answer to a question.\n"
         "Score 1.0 if the answer completely, directly, and concisely answers the user question.\n"
@@ -88,8 +102,7 @@ async def evaluate_answer_relevance_score(question: str, answer: str) -> float:
     user_prompt = f"Question: {question}\n\nAnswer:\n{answer}\n\nScore (0.0 to 1.0):"
 
     try:
-        res = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
-        score_text = str(res.content).strip()
+        score_text = await _judge_ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         import re
         match = re.search(r"\b(0(?:\.\d+)?|1(?:\.0+)?)\b", score_text)
         if match:

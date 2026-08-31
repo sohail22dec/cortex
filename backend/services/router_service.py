@@ -35,25 +35,23 @@ class RouteDecision(BaseModel):
     )
 
 
-def _get_router_llm():
-    """Initializes router LLM with Gemini Flash-Lite, falling back to Groq if needed."""
-    try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_FAST_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.0,
-        )
-    except Exception as e:
-        logger.warning("Could not initialize Gemini router LLM: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_FAST_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.0,
-        )
+# Initialize Gemini (primary) and Groq (fallback) structured router models
+try:
+    _gemini_router = ChatGoogleGenerativeAI(
+        model=config.GEMINI_FAST_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.0,
+        max_retries=0,
+    ).with_structured_output(RouteDecision)
+except Exception as e:
+    logger.warning("Could not initialize Gemini router: %s", e)
+    _gemini_router = None
 
-
-_router_llm = _get_router_llm()
-_structured_router_llm = _router_llm.with_structured_output(RouteDecision)
+_groq_router = ChatGroq(
+    model=config.GROQ_FAST_MODEL,
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+).with_structured_output(RouteDecision)
 
 ROUTER_SYSTEM_PROMPT = """You are Cortex, a helpful, intelligent, document-aware AI assistant.
 Your job is to classify the user's intent into exactly one of the following 4 routes:
@@ -88,27 +86,38 @@ def _build_messages(question: str, has_documents: bool, document_names: list) ->
 
 
 async def classify_async(question: str, has_documents: bool, document_names: list) -> Dict[str, Any]:
-    """Asynchronously classify user question with per-node timeout."""
+    """Asynchronously classify user question with per-node timeout and instant Groq fallback."""
     if question.lower().startswith("search the web for "):
         return {"route": "web_search", "direct_answer": "", "reason": "UI button override"}
 
     messages = _build_messages(question, has_documents, document_names)
+    route, reason = "", ""
 
-    try:
-        decision: RouteDecision = await asyncio.wait_for(
-            _structured_router_llm.ainvoke(messages),
-            timeout=config.TIMEOUT_ROUTER,
-        )
-        route = decision.route
-        reason = decision.reason
-    except asyncio.TimeoutError:
-        logger.warning("Router LLM timed out after %.1fs. Using safe fallback.", config.TIMEOUT_ROUTER)
-        route = "rag" if has_documents else "direct_answer"
-        reason = "timeout_fallback"
-    except Exception as e:
-        logger.warning("Structured routing error: %s. Using safe fallback.", e)
-        route = "rag" if has_documents else "direct_answer"
-        reason = "fallback"
+    # 1. Attempt Gemini Primary
+    if _gemini_router:
+        try:
+            decision: RouteDecision = await asyncio.wait_for(
+                _gemini_router.ainvoke(messages),
+                timeout=config.TIMEOUT_ROUTER,
+            )
+            route = decision.route
+            reason = decision.reason
+        except Exception as e:
+            logger.warning("Gemini router failed or hit quota: %s. Falling back to Groq.", e)
+
+    # 2. Fallback to Groq if Gemini failed
+    if not route:
+        try:
+            decision: RouteDecision = await asyncio.wait_for(
+                _groq_router.ainvoke(messages),
+                timeout=config.TIMEOUT_ROUTER,
+            )
+            route = decision.route
+            reason = decision.reason
+        except Exception as e:
+            logger.warning("Groq router fallback error: %s. Using default.", e)
+            route = "rag" if has_documents else "direct_answer"
+            reason = "fallback"
 
     if route == "rag" and not has_documents:
         route = "direct_answer"

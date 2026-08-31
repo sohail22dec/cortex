@@ -80,13 +80,15 @@ class PromptGuard:
 
         if getattr(config, "USE_LOCAL_PROMPT_GUARD_MODEL", False):
             try:
-                from transformers import pipeline
+                import importlib
+                transformers_pkg = importlib.import_module("transformers")
+                pipeline_fn = getattr(transformers_pkg, "pipeline")
 
                 model_name = getattr(
                     config, "PROMPT_GUARD_MODEL", "meta-llama/Prompt-Guard-86M"
                 )
                 logger.info("Loading local Prompt Guard model: %s", model_name)
-                self._hf_pipeline = pipeline("text-classification", model=model_name)
+                self._hf_pipeline = pipeline_fn("text-classification", model=model_name)
             except Exception as e:
                 logger.warning(
                     "Could not load local Prompt Guard model (%s). Using heuristics + Groq guard: %s",

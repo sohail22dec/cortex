@@ -5,6 +5,7 @@ Also bundles intelligent query rewriting into the same single pass to eliminate 
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Literal, Tuple
 
@@ -50,25 +51,23 @@ class RetrievalEvaluation(BaseModel):
     )
 
 
-def _get_evaluator_llm():
-    """Initializes evaluator LLM with Gemini Flash-Lite, falling back to Groq if needed."""
-    try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_FAST_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.0,
-        )
-    except Exception as e:
-        logger.warning("Could not initialize Gemini evaluator LLM: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_FAST_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.0,
-        )
+# Initialize Gemini (primary) and Groq (fallback) structured evaluator models
+try:
+    _gemini_evaluator = ChatGoogleGenerativeAI(
+        model=config.GEMINI_FAST_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.0,
+        max_retries=0,
+    ).with_structured_output(RetrievalEvaluation)
+except Exception as e:
+    logger.warning("Could not initialize Gemini evaluator: %s", e)
+    _gemini_evaluator = None
 
-
-_eval_llm = _get_evaluator_llm()
-_structured_evaluator_llm = _eval_llm.with_structured_output(RetrievalEvaluation)
+_groq_evaluator = ChatGroq(
+    model=config.GROQ_FAST_MODEL,
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+).with_structured_output(RetrievalEvaluation)
 
 
 def _build_evaluation_messages(question: str, chunks: List[dict], document_names: List[str] = None) -> list:
@@ -106,7 +105,7 @@ async def evaluate_retrieval_async(
     document_names: List[str] = None,
 ) -> Tuple[Literal["CORRECT", "INCORRECT", "AMBIGUOUS"], List[dict], str, str, str]:
     """
-    Asynchronously evaluates retrieved chunks and bundles query rewrites into a SINGLE call.
+    Asynchronously evaluates retrieved chunks and bundles query rewrites into a SINGLE call with instant Groq fallback.
     Returns (evaluation_result, refined_chunks, reason, db_query, web_query).
     """
     if not chunks:
@@ -115,24 +114,35 @@ async def evaluate_retrieval_async(
         return "INCORRECT", [], "No chunks retrieved from vector store.", fallback_query, fallback_query
 
     messages = _build_evaluation_messages(question, chunks, document_names)
+    result: RetrievalEvaluation | None = None
 
-    try:
-        result: RetrievalEvaluation = await _structured_evaluator_llm.ainvoke(messages)
-        indices = set(result.relevant_chunk_indices)
-        refined_chunks = [
-            chunk for i, chunk in enumerate(chunks, 1) if i in indices
-        ]
-        evaluation = result.evaluation
-        reason = result.reason
-        db_query = result.rewritten_query_for_db.strip() or question
-        web_query = result.rewritten_query_for_web.strip() or question
-    except Exception as e:
-        logger.warning("CRAG retrieval evaluation error: %s. Defaulting to CORRECT with all chunks.", e)
-        evaluation = "CORRECT"
-        refined_chunks = list(chunks)
-        reason = "fallback"
-        db_query = question
-        web_query = question
+    # 1. Attempt Gemini Primary
+    if _gemini_evaluator:
+        try:
+            result = await asyncio.wait_for(_gemini_evaluator.ainvoke(messages), timeout=config.TIMEOUT_RETRIEVAL_EVAL)
+        except Exception as e:
+            logger.warning("Gemini retrieval evaluator failed or hit quota: %s. Falling back to Groq.", e)
+
+    # 2. Fallback to Groq if Gemini failed
+    if not result:
+        try:
+            result = await asyncio.wait_for(_groq_evaluator.ainvoke(messages), timeout=config.TIMEOUT_RETRIEVAL_EVAL)
+        except Exception as e:
+            logger.warning("Groq retrieval evaluator fallback error: %s. Defaulting to CORRECT with all chunks.", e)
+            result = RetrievalEvaluation(
+                evaluation="CORRECT",
+                relevant_chunk_indices=list(range(1, len(chunks) + 1)),
+                rewritten_query_for_db=question,
+                rewritten_query_for_web=question,
+                reason="fallback",
+            )
+
+    indices = set(result.relevant_chunk_indices)
+    refined_chunks = [chunk for i, chunk in enumerate(chunks, 1) if i in indices]
+    evaluation = result.evaluation
+    reason = result.reason
+    db_query = result.rewritten_query_for_db.strip() or question
+    web_query = result.rewritten_query_for_web.strip() or question
 
     # Sanity check: if classified CORRECT but no chunks selected, fall back to AMBIGUOUS or all chunks
     if evaluation == "CORRECT" and not refined_chunks:
