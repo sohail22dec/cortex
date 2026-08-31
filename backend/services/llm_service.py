@@ -81,8 +81,22 @@ def run_llm(question: str) -> Dict[str, Any]:
         HumanMessage(content=question),
     ]
 
-    response = _llm.invoke(messages)
-    answer = _clean_response(str(response.content))
+    answer = ""
+    try:
+        response = _groq_direct_llm.invoke(messages)
+        answer = _clean_response(str(response.content))
+    except Exception as e:
+        logger.warning("Groq 20b direct LLM failed: %s. Falling back to Gemini.", e)
+
+    if not answer and _gemini_direct_llm:
+        try:
+            response = _gemini_direct_llm.invoke(messages)
+            answer = _clean_response(str(response.content))
+        except Exception as e:
+            logger.error("Gemini direct LLM fallback failed: %s", e)
+
+    if not answer:
+        answer = "I am Cortex, an AI assistant. How can I help you today?"
 
     return {
         "answer": answer,
