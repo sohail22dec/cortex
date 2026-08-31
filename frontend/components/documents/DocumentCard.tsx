@@ -18,8 +18,11 @@ import {
 import { DocumentInfo } from "./DocumentPreview";
 import { toast } from "sonner";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 interface DocumentCardProps {
   doc: DocumentInfo;
+  sessionId?: string;
   onPreview: (doc: DocumentInfo) => void;
   onDelete: (filename: string) => void;
   onUseInChat?: (filename: string) => void;
@@ -27,6 +30,7 @@ interface DocumentCardProps {
 
 export function DocumentCard({
   doc,
+  sessionId,
   onPreview,
   onDelete,
   onUseInChat,
@@ -34,8 +38,28 @@ export function DocumentCard({
   const isPdf = doc.filename.toLowerCase().endsWith(".pdf");
   const isDocx = doc.filename.toLowerCase().endsWith(".docx") || doc.filename.toLowerCase().endsWith(".doc");
 
-  const handleDownload = () => {
-    toast.info(`Downloading ${doc.filename}...`);
+  const handleDownload = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!sessionId) {
+      toast.info(`Downloading ${doc.filename}...`);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_URL}/api/documents/${encodeURIComponent(doc.filename)}/url?session_id=${encodeURIComponent(sessionId)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) {
+          window.open(data.url, "_blank");
+          toast.success(`Opening ${doc.filename}`);
+          return;
+        }
+      }
+      toast.error(`Download URL not available for ${doc.filename}`);
+    } catch {
+      toast.error(`Failed to download ${doc.filename}`);
+    }
   };
 
   return (

@@ -82,12 +82,21 @@ _crag_graph = _build_crag_graph()
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
+async def run_crag_async(
+    session_id: str, question: str, user_id: str | None = None
+) -> Dict[str, Any]:
     """Asynchronously execute the CRAG workflow without blocking the event loop."""
     try:
-        has_docs = await asyncio.to_thread(vs.has_documents, session_id)
+        doc_session_id = session_id
+        has_docs = await asyncio.to_thread(vs.has_documents, doc_session_id)
+        if not has_docs and user_id:
+            user_has_docs = await asyncio.to_thread(vs.has_documents, user_id)
+            if user_has_docs:
+                doc_session_id = user_id
+                has_docs = True
+
         doc_names = (
-            await asyncio.to_thread(vs.list_document_names, session_id)
+            await asyncio.to_thread(vs.list_document_names, doc_session_id)
             if has_docs
             else []
         )
@@ -95,10 +104,11 @@ async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
         logger.warning("Could not fetch vector store details: %s. Assuming no docs.", e)
         has_docs = False
         doc_names = []
+        doc_session_id = session_id
 
     initial_state: CRAGState = {
         "question": question,
-        "session_id": session_id,
+        "session_id": doc_session_id,
         "has_documents": has_docs,
         "document_names": doc_names,
         "route": "",
@@ -139,6 +149,6 @@ async def run_crag_async(session_id: str, question: str) -> Dict[str, Any]:
     }
 
 
-def run_crag(session_id: str, question: str) -> Dict[str, Any]:
+def run_crag(session_id: str, question: str, user_id: str | None = None) -> Dict[str, Any]:
     """Synchronous entrypoint."""
-    return asyncio.run(run_crag_async(session_id, question))
+    return asyncio.run(run_crag_async(session_id, question, user_id=user_id))

@@ -1,15 +1,11 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import {
   Paperclip,
-  Upload,
-  Globe,
-  Sliders,
   Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 
 interface ChatComposerProps {
   value: string;
@@ -28,7 +24,6 @@ export function ChatComposer({
   onOpenDocuments,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [webSearchActive, setWebSearchActive] = useState(false);
 
   // Auto-resize textarea up to max height
   useEffect(() => {
@@ -39,26 +34,19 @@ export function ChatComposer({
   }, [value]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // User requested rule:
     // Enter sends message.
-    // Ctrl + Enter (or Shift + Enter) inserts new line.
+    // Shift + Enter inserts new line.
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
       if (!isLoading && value.trim()) {
-        const query = webSearchActive && !value.toLowerCase().startsWith("search ")
-          ? `Search the web for ${value.trim()}`
-          : value.trim();
-        onSend(query);
+        onSend(value.trim());
       }
     }
   };
 
   const handleSendClick = () => {
     if (!isLoading && value.trim()) {
-      const query = webSearchActive && !value.toLowerCase().startsWith("search ")
-        ? `Search the web for ${value.trim()}`
-        : value.trim();
-      onSend(query);
+      onSend(value.trim());
     }
   };
 
@@ -81,57 +69,15 @@ export function ChatComposer({
 
         {/* Toolbar & Send Button */}
         <div className="flex items-center justify-between pt-1 border-t border-white/6">
-          {/* Left Toolbar Icons */}
+          {/* Left Toolbar: Attach / Open Documents */}
           <div className="flex items-center gap-1 text-zinc-400">
-            {/* Document Drawer / Attachment */}
             <button
               type="button"
               onClick={onOpenDocuments}
               className="p-2 rounded-lg hover:bg-[#161f30] hover:text-white transition-colors cursor-pointer"
-              title="Upload / Select Documents"
+              title="Knowledge Base Documents"
             >
               <Paperclip className="w-4 h-4" />
-            </button>
-
-            {/* Direct Upload */}
-            <button
-              type="button"
-              onClick={onOpenDocuments}
-              className="p-2 rounded-lg hover:bg-[#161f30] hover:text-white transition-colors cursor-pointer"
-              title="Upload new document"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-
-            {/* Web Search Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                setWebSearchActive((prev) => !prev);
-                toast.info(
-                  !webSearchActive
-                    ? "Web search prioritization enabled"
-                    : "Standard Corrective RAG routing active"
-                );
-              }}
-              className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                webSearchActive
-                  ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                  : "hover:bg-[#161f30] hover:text-white"
-              }`}
-              title={webSearchActive ? "Web search enabled" : "Enable Web Search"}
-            >
-              <Globe className="w-4 h-4" />
-            </button>
-
-            {/* Model info button */}
-            <button
-              type="button"
-              onClick={() => toast.info("Pipeline: Corrective RAG + Gemini Embeddings + Groq Llama/Qwen")}
-              className="p-2 rounded-lg hover:bg-[#161f30] hover:text-white transition-colors cursor-pointer"
-              title="Pipeline settings"
-            >
-              <Sliders className="w-4 h-4" />
             </button>
           </div>
 
@@ -158,7 +104,7 @@ export function ChatComposer({
       </div>
 
       <p className="mt-2 text-[11px] text-zinc-400 text-center font-normal tracking-wide select-none">
-        Coretext can make mistakes. Check important info.
+        Cortex can make mistakes. Check important info.
       </p>
     </div>
   );

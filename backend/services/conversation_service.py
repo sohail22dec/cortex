@@ -84,6 +84,17 @@ def get_messages(session_id: str) -> List[ChatMessage]:
         return []
 
 
+def delete_conversation(session_id: str) -> None:
+    """Delete all conversation messages for a session from Supabase."""
+    try:
+        client = _get_client()
+        client.table("conversations").delete().eq("session_id", session_id).execute()
+        logger.info("Deleted conversation messages for session %s", session_id)
+    except Exception as e:
+        logger.warning("Failed to delete conversation messages for %s: %s", session_id, e)
+        raise
+
+
 async def _summarize_messages(messages: List[ChatMessage]) -> str:
     """Ask a fast LLM to compress older messages into a concise summary."""
     text = _format_messages(messages)

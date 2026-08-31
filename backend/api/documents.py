@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 import config
 from guardrails import rate_limit, validate_file_magic
-from rag import document_processor, vector_store as vs
+from rag import document_processor, storage_service, vector_store as vs
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,11 @@ class DocumentListResponse(BaseModel):
 
 class DeleteResponse(BaseModel):
     message: str
+
+
+class DocumentUrlResponse(BaseModel):
+    filename: str
+    url: str
 
 
 
@@ -87,12 +92,20 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=magic_err)
 
     try:
-        # Offload file parsing, sanitization, and embedding generation to thread pool
+        # 1. Offload file parsing, sanitization, and embedding generation to thread pool
         chunks = await asyncio.to_thread(
             document_processor.process_and_index,
             session_id=session_id,
             file_bytes=content,
             filename=filename,
+        )
+        # 2. Store original raw file in Supabase Storage for preview/download
+        await asyncio.to_thread(
+            storage_service.upload_file,
+            session_id=session_id,
+            filename=filename,
+            file_bytes=content,
+            content_type=file.content_type or "application/octet-stream",
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -115,6 +128,17 @@ async def list_documents(session_id: str):
     return DocumentListResponse(session_id=session_id, documents=doc_names, items=doc_items)
 
 
+@router.get("/documents/{filename}/url", response_model=DocumentUrlResponse)
+async def get_document_url(filename: str, session_id: str):
+    """Generate a temporary signed URL to view or download the original uploaded document."""
+    url = await asyncio.to_thread(storage_service.get_signed_url, session_id, filename)
+    if not url:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Preview/download URL for '{filename}' could not be generated",
+        )
+    return DocumentUrlResponse(filename=filename, url=url)
+
 
 @router.delete("/documents/{filename}", response_model=DeleteResponse)
 async def delete_document(filename: str, session_id: str):
@@ -122,5 +146,7 @@ async def delete_document(filename: str, session_id: str):
     if not has_docs:
         raise HTTPException(status_code=404, detail="No documents found for this session")
 
+    # Delete vector chunks and original storage file
     await asyncio.to_thread(vs.delete_document, session_id, filename)
+    await asyncio.to_thread(storage_service.delete_file, session_id, filename)
     return DeleteResponse(message=f"Document '{filename}' removed from your session")

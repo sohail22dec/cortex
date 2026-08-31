@@ -11,7 +11,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Database, ShieldCheck, Calendar, HardDrive } from "lucide-react";
+import { FileText, Database, ShieldCheck, Calendar, HardDrive, Download } from "lucide-react";
+import { toast } from "sonner";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface DocumentInfo {
   filename: string;
@@ -23,6 +26,7 @@ export interface DocumentInfo {
 interface DocumentPreviewProps {
   open: boolean;
   document: DocumentInfo | null;
+  sessionId?: string;
   onOpenChange: (open: boolean) => void;
   onUseInChat?: (filename: string) => void;
 }
@@ -30,10 +34,34 @@ interface DocumentPreviewProps {
 export function DocumentPreview({
   open,
   document,
+  sessionId,
   onOpenChange,
   onUseInChat,
 }: DocumentPreviewProps) {
   if (!document) return null;
+
+  const handleDownload = async () => {
+    if (!sessionId) {
+      toast.info(`Downloading ${document.filename}...`);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_URL}/api/documents/${encodeURIComponent(document.filename)}/url?session_id=${encodeURIComponent(sessionId)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) {
+          window.open(data.url, "_blank");
+          toast.success(`Opening ${document.filename}`);
+          return;
+        }
+      }
+      toast.error(`Download URL not available for ${document.filename}`);
+    } catch {
+      toast.error(`Failed to download ${document.filename}`);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,7 +76,7 @@ export function DocumentPreview({
                 {document.filename}
               </DialogTitle>
               <DialogDescription className="text-xs text-zinc-400">
-                Indexed in Supabase pgvector store
+                Indexed in Supabase pgvector & Storage
               </DialogDescription>
             </div>
           </div>
@@ -97,10 +125,11 @@ export function DocumentPreview({
         <DialogFooter className="gap-2">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="text-xs h-8"
+            onClick={handleDownload}
+            className="text-xs h-8 gap-1.5 border-white/10 hover:bg-white/10"
           >
-            Close
+            <Download className="w-3.5 h-3.5 text-zinc-400" />
+            Download Original
           </Button>
           {onUseInChat && (
             <Button

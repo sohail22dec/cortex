@@ -183,6 +183,7 @@ export function DocumentsDrawer({
                         <DocumentCard
                           key={doc.filename}
                           doc={doc}
+                          sessionId={sessionId}
                           onPreview={(d) => setPreviewDoc(d)}
                           onDelete={(f) => setDocToDelete(f)}
                           onUseInChat={onUseInChat}
@@ -230,6 +231,7 @@ export function DocumentsDrawer({
       <DocumentPreview
         open={!!previewDoc}
         document={previewDoc}
+        sessionId={sessionId}
         onOpenChange={(op) => !op && setPreviewDoc(null)}
         onUseInChat={onUseInChat}
       />

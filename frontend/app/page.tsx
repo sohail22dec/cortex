@@ -220,7 +220,7 @@ export default function Home() {
     setActiveChatId(newId);
   }, [sessions]);
 
-  const deleteChat = useCallback((id: string) => {
+  const deleteChat = useCallback(async (id: string) => {
     setSessions((prev) => {
       const updated = prev.filter((s) => s.id !== id);
       saveSessionsToStorage(updated);
@@ -232,6 +232,19 @@ export default function Home() {
         setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
         return remaining;
       });
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        toast.success("Chat deleted");
+      } else {
+        toast.error("Failed to delete chat from database");
+      }
+    } catch {
+      toast.error("Network error deleting chat from database");
     }
   }, []);
 
@@ -320,7 +333,11 @@ export default function Home() {
         const res = await fetch(`${API_URL}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: question, session_id: userId }),
+          body: JSON.stringify({
+            message: question,
+            session_id: targetSessionId,
+            user_id: userId,
+          }),
         });
 
         const data = await res.json();

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,7 +14,12 @@ from guardrails import (
     rate_limit,
     redact_pii_async,
 )
-from services.conversation_service import get_conversation_context, save_message
+from rag import storage_service, vector_store as vs
+from services.conversation_service import (
+    delete_conversation,
+    get_conversation_context,
+    save_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,12 @@ router = APIRouter(prefix="/api", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     session_id: str = Field(..., min_length=1, max_length=128)
+    user_id: str | None = Field(None, max_length=128)
+
+
+class DeleteSessionResponse(BaseModel):
+    status: str
+    message: str
 
 
 class ChatResponse(BaseModel):
@@ -84,6 +96,7 @@ async def chat(request: ChatRequest):
         result = await run_crag_async(
             session_id=request.session_id,
             question=augmented_question,
+            user_id=request.user_id,
         )
 
         # ── Layer 3 Guardrail: Output Scrubbing & Citation Verification ───────
@@ -111,3 +124,20 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.exception("Chat error for session %s", request.session_id)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/sessions/{session_id}", response_model=DeleteSessionResponse)
+async def delete_session(session_id: str):
+    """Delete all conversation history, document chunks, and storage files associated with a session."""
+    try:
+        await asyncio.to_thread(delete_conversation, session_id)
+        await asyncio.to_thread(vs.delete_session_documents, session_id)
+        await asyncio.to_thread(storage_service.delete_session_files, session_id)
+        return DeleteSessionResponse(
+            status="success",
+            message=f"Session '{session_id}' deleted successfully",
+        )
+    except Exception as e:
+        logger.exception("Failed to delete session %s", session_id)
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {e}")
+

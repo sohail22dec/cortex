@@ -120,3 +120,11 @@ def delete_document(session_id: str, filename: str) -> None:
     client = _get_client()
     client.table(TABLE).delete().eq("session_id", session_id).eq("source", filename).execute()
 
+
+def delete_session_documents(session_id: str) -> None:
+    """Delete all document chunks for a session from Supabase."""
+    client = _get_client()
+    client.table(TABLE).delete().eq("session_id", session_id).execute()
+    logger.info("Deleted document chunks for session %s", session_id)
+
+
