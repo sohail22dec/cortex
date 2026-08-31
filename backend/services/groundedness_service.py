@@ -30,10 +30,16 @@ class GroundednessEvaluation(BaseModel):
     )
 
 
-# Initialize Gemini (primary) and Groq (fallback) structured judge models
+# Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) structured judge models
+_groq_judge = ChatGroq(
+    model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+).with_structured_output(GroundednessEvaluation)
+
 try:
     _gemini_judge = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,
+        model=config.GEMINI_FAST_MODEL,  # gemini-3.5-flash-lite
         google_api_key=config.GEMINI_API_KEY,
         temperature=0.0,
         max_retries=0,
@@ -41,12 +47,6 @@ try:
 except Exception as e:
     logger.warning("Could not initialize Gemini judge: %s", e)
     _gemini_judge = None
-
-_groq_judge = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.0,
-).with_structured_output(GroundednessEvaluation)
 
 
 async def evaluate_groundedness_async(
@@ -56,7 +56,7 @@ async def evaluate_groundedness_async(
 ) -> Tuple[bool, str]:
     """
     Asynchronously evaluates whether the generated answer is strictly grounded in the provided context
-    with instant Groq fallback.
+    using Groq 120b primary with Gemini Flash-Lite fallback.
     Returns (is_grounded, reason).
     """
     if not context or not answer:
@@ -86,20 +86,22 @@ async def evaluate_groundedness_async(
 
     result: GroundednessEvaluation | None = None
 
-    # 1. Attempt Gemini Primary
-    if _gemini_judge:
+    # 1. Attempt Groq 120b Primary
+    try:
+        result = await asyncio.wait_for(_groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
+    except Exception as e:
+        logger.warning("Groq 120b groundedness judge failed: %s. Falling back to Gemini.", e)
+
+    # 2. Fallback to Gemini Flash-Lite if Groq failed
+    if not result and _gemini_judge:
         try:
             result = await asyncio.wait_for(_gemini_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
         except Exception as e:
-            logger.warning("Gemini groundedness judge failed or hit quota: %s. Falling back to Groq.", e)
-
-    # 2. Fallback to Groq if Gemini failed
-    if not result:
-        try:
-            result = await asyncio.wait_for(_groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
-        except Exception as e:
-            logger.warning("Groq groundedness judge fallback error: %s. Defaulting to grounded.", e)
+            logger.warning("Gemini groundedness judge fallback error: %s. Defaulting to grounded.", e)
             return True, "fallback"
+
+    if not result:
+        return True, "fallback"
 
     is_grounded = result.is_grounded == "YES"
     return is_grounded, result.reason

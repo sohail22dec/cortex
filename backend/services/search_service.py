@@ -19,26 +19,6 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def _get_query_llm():
-    """Initializes query transform LLM with Gemini Flash-Lite, falling back to Groq."""
-    try:
-        return ChatGoogleGenerativeAI(
-            model=config.GEMINI_FAST_MODEL,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=0.0,
-        )
-    except Exception as e:
-        logger.warning("Could not initialize Gemini query LLM: %s. Falling back to Groq.", e)
-        return ChatGroq(
-            model=config.GROQ_FAST_MODEL,
-            api_key=config.GROQ_API_KEY,
-            temperature=0.0,
-        )
-
-
-_query_llm = _get_query_llm()
-
-
 class QueryTransform(BaseModel):
     transformed_query: str = Field(
         description="The rewritten, search-engine or vector-search optimized query."
@@ -49,7 +29,38 @@ class QueryTransform(BaseModel):
     )
 
 
-_structured_query_llm = _query_llm.with_structured_output(QueryTransform)
+try:
+    _gemini_query_llm = ChatGoogleGenerativeAI(
+        model=config.GEMINI_FAST_MODEL,
+        google_api_key=config.GEMINI_API_KEY,
+        temperature=0.0,
+        max_retries=0,
+    ).with_structured_output(QueryTransform)
+except Exception as e:
+    logger.warning("Could not initialize Gemini query LLM: %s", e)
+    _gemini_query_llm = None
+
+_groq_query_llm = ChatGroq(
+    model=config.GROQ_FAST_MODEL,  # openai/gpt-oss-20b
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+).with_structured_output(QueryTransform)
+
+
+async def _ainvoke_query_transform(messages: list, default_query: str) -> str:
+    if _gemini_query_llm:
+        try:
+            res: QueryTransform = await _gemini_query_llm.ainvoke(messages)
+            return res.transformed_query.strip()
+        except Exception as e:
+            logger.warning("Gemini query rewriter failed: %s. Falling back to Groq.", e)
+
+    try:
+        res: QueryTransform = await _groq_query_llm.ainvoke(messages)
+        return res.transformed_query.strip()
+    except Exception as e:
+        logger.warning("Groq query rewriter fallback failed: %s. Using default query.", e)
+        return default_query
 
 
 def _clean_web_results(raw_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -98,12 +109,7 @@ async def rewrite_query_for_vector_db_async(question: str, document_names: List[
         ),
         HumanMessage(content=f"Original Question: {question}"),
     ]
-    try:
-        res: QueryTransform = await _structured_query_llm.ainvoke(messages)
-        return res.transformed_query.strip()
-    except Exception as e:
-        logger.warning("Vector DB query rewriting failed: %s. Using original.", e)
-        return question
+    return await _ainvoke_query_transform(messages, default_query=question)
 
 
 async def rewrite_query_for_web_async(question: str) -> str:
@@ -120,12 +126,7 @@ async def rewrite_query_for_web_async(question: str) -> str:
         ),
         HumanMessage(content=f"Original Question: {question}"),
     ]
-    try:
-        res: QueryTransform = await _structured_query_llm.ainvoke(messages)
-        return res.transformed_query.strip()
-    except Exception as e:
-        logger.warning("Web query rewriting failed: %s. Using original.", e)
-        return question
+    return await _ainvoke_query_transform(messages, default_query=question)
 
 
 async def search_web_async(query: str, max_results: int = 5) -> List[Dict[str, Any]]:

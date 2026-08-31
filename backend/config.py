@@ -3,14 +3,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Groq LLMs (Fallback)
+# Groq LLMs (High speed & reasoning fallback)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or "gsk_mock_fallback_key_for_ci_testing"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY") or "tvly-mock-fallback-key-for-ci"
-GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "qwen/qwen3.6-27b")
+GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "openai/gpt-oss-120b")
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
 
 # Google Gemini LLMs (Primary high-speed & high-groundedness models)
-GEMINI_REASONING_MODEL = os.getenv("GEMINI_REASONING_MODEL", "gemini-2.5-flash")
+GEMINI_REASONING_MODEL = os.getenv("GEMINI_REASONING_MODEL", "gemini-3.5-flash-lite")
 GEMINI_FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-3.5-flash-lite")
 
 # Supabase (vector store + future auth & sessions)

@@ -133,7 +133,7 @@ async def run_crag_async(
     }
 
     run_config = {
-        "recursion_limit": 10,
+        "recursion_limit": 25,
         "tags": ["cortex", "crag-workflow"],
         "metadata": {"session_id": session_id, "question": question[:50]},
     }

@@ -64,7 +64,7 @@ except Exception as e:
     _gemini_evaluator = None
 
 _groq_evaluator = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
+    model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 ).with_structured_output(RetrievalEvaluation)

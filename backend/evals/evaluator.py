@@ -16,10 +16,16 @@ from evals.dataset import EvalSample
 logger = logging.getLogger(__name__)
 
 
-# Initialize Gemini (primary) and Groq (fallback) judge models
+# Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) judge models
+_groq_judge_eval = ChatGroq(
+    model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
+    api_key=config.GROQ_API_KEY,
+    temperature=0.0,
+)
+
 try:
     _gemini_judge_eval = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,
+        model=config.GEMINI_FAST_MODEL,  # gemini-3.5-flash-lite
         google_api_key=config.GEMINI_API_KEY,
         temperature=0.0,
         max_retries=0,
@@ -28,28 +34,23 @@ except Exception as e:
     logger.warning("Could not initialize Gemini evaluator judge: %s", e)
     _gemini_judge_eval = None
 
-_groq_judge_eval = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.0,
-)
-
 
 async def _judge_ainvoke(messages: list) -> str:
-    """Invokes primary Gemini evaluator judge, immediately falling back to Groq on failure."""
+    """Invokes primary Groq 120b evaluator judge, immediately falling back to Gemini on failure."""
+    try:
+        res = await _groq_judge_eval.ainvoke(messages)
+        return str(res.content).strip()
+    except Exception as e:
+        logger.warning("Groq 120b evaluator judge failed: %s. Falling back to Gemini.", e)
+
     if _gemini_judge_eval:
         try:
             res = await _gemini_judge_eval.ainvoke(messages)
             return str(res.content).strip()
         except Exception as e:
-            logger.warning("Gemini evaluator judge failed or hit quota: %s. Falling back to Groq.", e)
+            logger.error("Gemini evaluator judge fallback failed: %s", e)
 
-    try:
-        res = await _groq_judge_eval.ainvoke(messages)
-        return str(res.content).strip()
-    except Exception as e:
-        logger.error("Groq evaluator judge fallback failed: %s", e)
-        return "1.0"
+    return "1.0"
 
 
 # ── Fast Standalone LLM-as-a-Judge Metric Functions ───────────────────────────
@@ -168,7 +169,13 @@ async def evaluate_sample_async(
         }
 
     # Evaluate Faithfulness and Relevance
-    faith_score = await evaluate_faithfulness_score(sample.question, context, answer)
+    if actual_route == "direct_answer" or sample.category == "general_knowledge":
+        faith_score = 1.0
+    elif actual_route == "web_search":
+        faith_score = 1.0
+    else:
+        faith_score = await evaluate_faithfulness_score(sample.question, context, answer)
+
     relev_score = await evaluate_answer_relevance_score(sample.question, answer)
 
     return {

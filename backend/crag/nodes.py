@@ -199,7 +199,6 @@ async def generate_node(state: CRAGState) -> CRAGState:
         "answer": result["answer"],
         "source": result["source"],
         "citations": result["citations"],
-        "groundedness_retry_count": retry_count + 1 if strict_mode else retry_count,
     }
 
 
@@ -263,6 +262,7 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
         "route": final_route,
         "is_grounded": is_grounded,
         "groundedness_reason": reason,
+        "groundedness_retry_count": retry_count + (1 if not is_grounded else 0),
     }
 
 
