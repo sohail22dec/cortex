@@ -24,8 +24,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable}`}>
-      <body className="bg-[#080b11] text-zinc-100 font-sans antialiased overflow-hidden min-h-screen">
+    <html lang="en" className={`dark ${inter.variable}`} suppressHydrationWarning>
+      <body
+        className="bg-[#080b11] text-zinc-100 font-sans antialiased overflow-hidden min-h-screen"
+        suppressHydrationWarning
+      >
         {children}
         <Toaster position="bottom-right" richColors />
       </body>

@@ -9,43 +9,65 @@ import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 import config
 
 logger = logging.getLogger(__name__)
 
-# Flagship reasoning LLM for high-quality response synthesis
-_generator_llm = ChatGroq(
-    model=config.GROQ_REASONING_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.3,
-)
+
+def _get_generator_llm():
+    """Initializes generator LLM with Gemini 2.5 Flash, falling back to Groq if needed."""
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_REASONING_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.2,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini generator LLM: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_REASONING_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.2,
+        )
+
+
+_generator_llm = _get_generator_llm()
+
+DIRECT_SYSTEM_PROMPT = """You are Cortex, an intelligent, helpful, and concise AI assistant.
+Answer the user's question directly, accurately, and politely in markdown.
+Provide clean explanations, code blocks, or mathematical derivations where appropriate."""
 
 RAG_SYSTEM_PROMPT = """You are Cortex, a document-aware AI assistant.
 Answer the user's question accurately using ONLY the provided document context.
 If the context does not contain enough information, clearly explain what was found and what is missing.
-Always cite the source document name when providing factual details.
-Format your answer clearly using markdown."""
+Format your answer clearly using markdown.
+CRITICAL CONSTRAINT: Do NOT write "Source:", "Sources:", or document filenames anywhere in your response text. Citations and document badges are rendered automatically by the UI."""
 
 STRICT_RAG_SYSTEM_PROMPT = """You are Cortex, a document-aware AI assistant with STRICT groundedness rules.
 Answer the question using ONLY facts directly stated in the provided document context.
 Do NOT extrapolate, guess, or add outside knowledge.
-Format your answer clearly using markdown."""
+CRITICAL CONSTRAINT: Do NOT write "Source:", "Sources:", or document filenames anywhere in your response text."""
 
 WEB_SYSTEM_PROMPT = """You are Cortex, a real-time web-aware AI assistant.
 Answer the question accurately using the provided web search results.
-Mention the key facts clearly and cite relevant source URLs where appropriate.
-Format your answer clearly using markdown."""
+Mention key facts clearly.
+CRITICAL CONSTRAINT: Do NOT write "Source:", "Sources:", or URLs as a manual footer at the end of your answer."""
 
 HYBRID_SYSTEM_PROMPT = """You are Cortex, an intelligent hybrid AI assistant.
 You have access to excerpts from the user's uploaded documents AND supplementary real-time web search results.
 Synthesize a comprehensive, accurate answer combining both sources.
 Clearly distinguish what comes from uploaded documents vs what comes from the web.
-Format your answer clearly using markdown."""
+CRITICAL CONSTRAINT: Do NOT write "Source:" or "Sources:" footers at the end of your answer."""
 
 
-def _clean_response(text: str) -> str:
+def _clean_response(content: Any) -> str:
+    if isinstance(content, list):
+        text = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+    else:
+        text = str(content)
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     return cleaned if cleaned else text.strip()
 
@@ -207,3 +229,24 @@ async def generate_hybrid_answer_async(
         "source": "hybrid",
         "citations": citations,
     }
+
+
+async def generate_direct_answer_async(question: str) -> Dict[str, Any]:
+    """Generates a direct, clean answer for general concepts, coding, math, or greetings."""
+    messages = [
+        SystemMessage(content=DIRECT_SYSTEM_PROMPT),
+        HumanMessage(content=question),
+    ]
+    try:
+        res = await _generator_llm.ainvoke(messages)
+        answer = _clean_response(res.content)
+    except Exception as e:
+        logger.warning("Direct answer synthesis error: %s. Using simple fallback.", e)
+        answer = "I am Cortex, an AI assistant. How can I help you today?"
+
+    return {
+        "answer": answer,
+        "source": "llm",
+        "citations": [],
+    }
+

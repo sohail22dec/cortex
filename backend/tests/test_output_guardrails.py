@@ -40,6 +40,19 @@ class TestOutputGuardrails(unittest.TestCase):
         self.assertNotIn("[SYSTEM]", scrubbed)
         self.assertEqual(scrubbed, "This is the actual helpful answer to your question.")
 
+    def test_scrub_output_removes_redundant_source_footers(self):
+        answer_with_footer = (
+            "Based on the provided document, the company's core collaboration hours are **10:00 AM to 4:00 PM** local time.\n\n"
+            "*Source: [novacore_policy.pdf]*"
+        )
+        scrubbed = scrub_output(answer_with_footer)
+        self.assertNotIn("*Source:", scrubbed)
+        self.assertNotIn("[novacore_policy.pdf]", scrubbed)
+        self.assertEqual(
+            scrubbed,
+            "Based on the provided document, the company's core collaboration hours are **10:00 AM to 4:00 PM** local time.",
+        )
+
     def test_verify_citations_filters_phantom_citations(self):
         generated_citations = [
             "annual_report_2025.pdf",

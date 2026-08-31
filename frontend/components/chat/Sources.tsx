@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sparkles, FileText, Globe, ExternalLink } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FileText, Globe, ExternalLink } from "lucide-react";
 
 interface SourcesProps {
   citations?: string[];
-  sourceType?: "rag" | "llm" | "web_search";
+  sourceType?: "rag" | "llm" | "web_search" | "hybrid" | "guardrail";
 }
 
-export function Sources({ citations = [], sourceType = "rag" }: SourcesProps) {
+export function Sources({
+  citations = [],
+  sourceType = "rag",
+}: SourcesProps) {
   const [showAll, setShowAll] = useState(false);
 
   if (!citations || citations.length === 0) {
@@ -21,74 +23,62 @@ export function Sources({ citations = [], sourceType = "rag" }: SourcesProps) {
   const remainingCount = citations.length - 3;
 
   return (
-    <div className="mt-4 pt-3 border-t border-white/6 flex flex-col gap-2.5">
-      {/* Sources Header */}
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#9d93ff]">
-        <Sparkles className="w-3.5 h-3.5 fill-[#9d93ff]" />
-        <span>Sources</span>
-      </div>
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-[11px] font-medium text-zinc-500 select-none mr-0.5">
+        Sources:
+      </span>
 
-      {/* Sources Chips */}
-      <div className="flex flex-wrap items-center gap-2">
-        {visibleCitations.map((cite, idx) => {
-          const isWeb = cite.startsWith("http");
-          let label = cite;
-          let tag = "PDF";
+      {visibleCitations.map((cite, idx) => {
+        const isWeb = cite.startsWith("http");
+        let label = cite;
 
-          if (isWeb) {
-            try {
-              const url = new URL(cite);
-              label = url.hostname.replace("www.", "");
-              tag = "Web";
-            } catch {
-              label = "Web Source";
-              tag = "Web";
-            }
-          } else {
-            label = cite.replace(/\.[^/.]+$/, "");
-            tag = cite.endsWith(".docx") ? "DOCX" : "PDF";
+        if (isWeb) {
+          try {
+            const url = new URL(cite);
+            label = url.hostname.replace(/^www\./, "");
+          } catch {
+            label = "Web Source";
           }
+        }
 
+        if (isWeb) {
           return (
             <a
               key={idx}
-              href={isWeb ? cite : undefined}
-              target={isWeb ? "_blank" : undefined}
-              rel={isWeb ? "noopener noreferrer" : undefined}
+              href={cite}
+              target="_blank"
+              rel="noopener noreferrer"
               title={cite}
-              className={cn(
-                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#121824] border border-white/8 text-xs font-medium text-zinc-300 hover:text-white hover:border-[#6d5dfc]/40 hover:bg-[#161f30] transition-all max-w-[260px] truncate group select-none",
-                isWeb ? "cursor-pointer" : "cursor-default"
-              )}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#121824]/60 hover:bg-[#161f30] border border-white/6 hover:border-amber-500/30 text-[11px] text-zinc-300 hover:text-white transition-all select-none group cursor-pointer max-w-[240px]"
             >
-              {isWeb ? (
-                <Globe className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              ) : (
-                <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" />
-              )}
+              <Globe className="w-3 h-3 text-amber-400 shrink-0" />
               <span className="truncate">{label}</span>
-              <span
-                className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded font-mono uppercase",
-                  isWeb ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"
-                )}
-              >
-                {tag}
-              </span>
-              {isWeb && <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 ml-0.5 shrink-0" />}
+              <ExternalLink className="w-2.5 h-2.5 text-zinc-500 group-hover:text-zinc-300 shrink-0" />
             </a>
           );
-        })}
+        }
 
-        {remainingCount > 0 && !showAll && (
-          <button
-            onClick={() => setShowAll(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-[#121824] border border-white/8 text-xs font-medium text-zinc-400 hover:text-white hover:bg-[#161f30] transition-colors cursor-pointer"
+        return (
+          <div
+            key={idx}
+            title={cite}
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#121824]/60 border border-white/6 text-[11px] text-zinc-300 select-none cursor-default max-w-[240px]"
           >
-            + {remainingCount} more
-          </button>
-        )}
-      </div>
+            <FileText className="w-3 h-3 text-red-400/90 shrink-0" />
+            <span className="truncate">{label}</span>
+          </div>
+        );
+      })}
+
+      {remainingCount > 0 && !showAll && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="px-1.5 py-0.5 rounded-md text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
+        >
+          +{remainingCount} more
+        </button>
+      )}
     </div>
   );
 }

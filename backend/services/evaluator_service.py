@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Literal, Tuple
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -49,13 +50,24 @@ class RetrievalEvaluation(BaseModel):
     )
 
 
-# Fast LLM for evaluation
-_eval_llm = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.0,
-)
+def _get_evaluator_llm():
+    """Initializes evaluator LLM with Gemini Flash-Lite, falling back to Groq if needed."""
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_FAST_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.0,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini evaluator LLM: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_FAST_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.0,
+        )
 
+
+_eval_llm = _get_evaluator_llm()
 _structured_evaluator_llm = _eval_llm.with_structured_output(RetrievalEvaluation)
 
 

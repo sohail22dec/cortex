@@ -6,17 +6,37 @@ import { Sources } from "./Sources";
 import { MessageActions } from "./MessageActions";
 import { CoretextLogo } from "@/components/ui/CoretextLogo";
 
+export interface ChunkData {
+  source: string;
+  text: string;
+  similarity?: number;
+}
+
+export interface WebResultData {
+  title: string;
+  url: string;
+  content: string;
+}
+
 export interface MessageData {
   id: string;
   role: "user" | "assistant";
   content: string;
-  source?: "rag" | "llm" | "web_search";
+  source?: "rag" | "llm" | "web_search" | "hybrid" | "guardrail";
   citations?: string[];
   isLoading?: boolean;
   suggest_web_search?: boolean;
   question?: string;
   timestamp?: string;
   chunksCount?: number;
+  chunks?: ChunkData[];
+  webResults?: WebResultData[];
+  evaluationResult?: string;
+  evaluationReason?: string;
+  isGrounded?: boolean;
+  groundednessReason?: string;
+  route?: string;
+  transformedQuery?: string;
 }
 
 interface AssistantMessageProps {
@@ -40,6 +60,7 @@ function CodeBlock({ code }: { code: string }) {
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#121824] border-b border-white/6 text-zinc-400">
         <span className="text-[10px]">Code</span>
         <button
+          type="button"
           onClick={handleCopy}
           className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white"
         >
@@ -79,7 +100,13 @@ function renderInline(text: string): React.ReactNode {
 }
 
 function formatMarkdown(text: string): React.ReactNode {
-  const lines = text.split("\n");
+  // Strip any manual source footnotes or inline Source: lines anywhere at the end of the text
+  const cleanedText = text
+    .replace(/^\s*[\*\_\-\s]*Sources?[\*\_\-\s]*:\s*.*$/gim, "")
+    .replace(/^\s*[\*\_\-\s]*Sources?[\*\_\-\s]*:?\s*\[?[^\]\n]+\]?\s*[\*\_\-\s]*$/gim, "")
+    .trim();
+
+  const lines = cleanedText.split("\n");
   const elements: React.ReactNode[] = [];
 
   let inCodeBlock = false;
@@ -183,7 +210,10 @@ export function AssistantMessage({
 
               {/* Sources */}
               {message.citations && message.citations.length > 0 && (
-                <Sources citations={message.citations} sourceType={message.source} />
+                <Sources
+                  citations={message.citations}
+                  sourceType={message.source}
+                />
               )}
 
               {/* Actions & Transparency Footer */}
@@ -191,7 +221,15 @@ export function AssistantMessage({
                 content={message.content}
                 timestamp={message.timestamp}
                 source={message.source}
-                chunksCount={message.chunksCount || 5}
+                chunksCount={message.chunks?.length || message.chunksCount || 0}
+                chunks={message.chunks}
+                webResults={message.webResults}
+                evaluationResult={message.evaluationResult}
+                evaluationReason={message.evaluationReason}
+                isGrounded={message.isGrounded}
+                groundednessReason={message.groundednessReason}
+                route={message.route}
+                transformedQuery={message.transformedQuery}
                 question={message.question}
                 suggestWebSearch={message.suggest_web_search}
                 onWebSearchFallback={onWebSearchFallback}

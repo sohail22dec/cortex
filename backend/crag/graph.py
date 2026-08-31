@@ -27,6 +27,7 @@ def _build_crag_graph() -> Any:
     graph.add_node("generate_node", nodes.generate_node)
     graph.add_node("groundedness_check_node", nodes.groundedness_check_node)
     graph.add_node("direct_web_search_node", nodes.direct_web_search_node)
+    graph.add_node("direct_answer_node", nodes.direct_answer_node)
 
     # 2. Set Entry Point
     graph.set_entry_point("router")
@@ -38,9 +39,13 @@ def _build_crag_graph() -> Any:
         {
             "retrieve_node": "retrieve_node",
             "direct_web_search_node": "direct_web_search_node",
+            "direct_answer_node": "direct_answer_node",
             "END": END,
         },
     )
+
+    # Direct Answer Route Termination
+    graph.add_edge("direct_answer_node", END)
 
 
     # 4. CRAG Core Pipeline Edges
@@ -142,8 +147,13 @@ async def run_crag_async(
         "source": final_state.get("source", "llm"),
         "citations": final_state.get("citations", []),
         "route": final_state.get("route", "llm"),
+        "chunks": final_state.get("chunks", []) or final_state.get("refined_chunks", []),
+        "web_results": final_state.get("web_results", []),
         "evaluation_result": final_state.get("evaluation_result", ""),
+        "evaluation_reason": final_state.get("evaluation_reason", ""),
         "is_grounded": final_state.get("is_grounded", True),
+        "groundedness_reason": final_state.get("groundedness_reason", ""),
+        "transformed_query": final_state.get("transformed_query", ""),
         "valid_doc_sources": valid_doc_sources,
         "valid_web_urls": valid_web_urls,
     }

@@ -37,12 +37,31 @@ class DeleteSessionResponse(BaseModel):
     message: str
 
 
+class ChunkInfo(BaseModel):
+    source: str
+    text: str
+    similarity: float | None = None
+
+
+class WebResultInfo(BaseModel):
+    title: str
+    url: str
+    content: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     source: str
     citations: list[str]
     route: str
     suggest_web_search: bool = False
+    chunks: list[ChunkInfo] = []
+    web_results: list[WebResultInfo] = []
+    evaluation_result: str | None = None
+    evaluation_reason: str | None = None
+    is_grounded: bool | None = None
+    groundedness_reason: str | None = None
+    transformed_query: str | None = None
 
 
 @router.post(
@@ -112,12 +131,41 @@ async def chat(request: ChatRequest):
         save_message(request.session_id, "user", processed_query)
         save_message(request.session_id, "assistant", clean_answer)
 
+        raw_chunks = result.get("chunks", [])
+        clean_chunks = [
+            ChunkInfo(
+                source=c.get("source", "Unknown"),
+                text=c.get("text", ""),
+                similarity=c.get("similarity"),
+            )
+            for c in raw_chunks
+            if c.get("text")
+        ]
+
+        raw_web = result.get("web_results", [])
+        clean_web = [
+            WebResultInfo(
+                title=w.get("title", "Web Source"),
+                url=w.get("url", ""),
+                content=w.get("content", ""),
+            )
+            for w in raw_web
+            if w.get("url") or w.get("content")
+        ]
+
         return ChatResponse(
             answer=clean_answer,
             source=result.get("source", "llm"),
             citations=clean_citations,
             route=result.get("route", "llm"),
             suggest_web_search=result.get("source") == "web_search",
+            chunks=clean_chunks,
+            web_results=clean_web,
+            evaluation_result=result.get("evaluation_result") or None,
+            evaluation_reason=result.get("evaluation_reason") or None,
+            is_grounded=result.get("is_grounded"),
+            groundedness_reason=result.get("groundedness_reason") or None,
+            transformed_query=result.get("transformed_query") or None,
         )
     except HTTPException:
         raise

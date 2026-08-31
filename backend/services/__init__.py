@@ -12,6 +12,7 @@ from services.generator_service import (
     generate_rag_answer_async,
     generate_web_answer_async,
     generate_hybrid_answer_async,
+    generate_direct_answer_async,
 )
 from services.groundedness_service import evaluate_groundedness_async, GroundednessEvaluation
 from services.llm_service import run_llm_async, run_llm
@@ -28,6 +29,7 @@ __all__ = [
     "generate_rag_answer_async",
     "generate_web_answer_async",
     "generate_hybrid_answer_async",
+    "generate_direct_answer_async",
     "evaluate_groundedness_async",
     "GroundednessEvaluation",
     "run_llm_async",

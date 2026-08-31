@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Literal, Tuple
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -28,13 +29,24 @@ class GroundednessEvaluation(BaseModel):
     )
 
 
-# Fast LLM for independent factuality judging
-_judge_llm = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.0,
-)
+def _get_judge_llm():
+    """Initializes groundedness judge LLM with Gemini Flash-Lite, falling back to Groq if needed."""
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_FAST_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.0,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini judge LLM: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_FAST_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.0,
+        )
 
+
+_judge_llm = _get_judge_llm()
 _structured_judge_llm = _judge_llm.with_structured_output(GroundednessEvaluation)
 
 

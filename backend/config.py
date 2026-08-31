@@ -3,11 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Groq LLMs (Fallback)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or "gsk_mock_fallback_key_for_ci_testing"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY") or "tvly-mock-fallback-key-for-ci"
 GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "qwen/qwen3.6-27b")
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
 
+# Google Gemini LLMs (Primary high-speed & high-groundedness models)
+GEMINI_REASONING_MODEL = os.getenv("GEMINI_REASONING_MODEL", "gemini-2.5-flash")
+GEMINI_FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-3.5-flash-lite")
 
 # Supabase (vector store + future auth & sessions)
 SUPABASE_URL = os.getenv("SUPABASE_URL") or "https://mockproject.supabase.co"
@@ -41,11 +45,11 @@ else:
     os.environ["LANGCHAIN_TRACING_V2"] = "false"
     os.environ["LANGSMITH_TRACING"] = "false"
 # ── Layer 1: Frontline Guardrails Configuration ──────────────────────────────
-# Rate Limiting & Throttling
+# Rate Limiting & Throttling (increased ceiling to prevent benchmark bottlenecks)
 ENABLE_RATE_LIMITING = os.getenv("ENABLE_RATE_LIMITING", "true").lower() in ("true", "1")
-RATE_LIMIT_CHAT_REQUESTS = int(os.getenv("RATE_LIMIT_CHAT_REQUESTS", "20"))
+RATE_LIMIT_CHAT_REQUESTS = int(os.getenv("RATE_LIMIT_CHAT_REQUESTS", "100"))
 RATE_LIMIT_CHAT_WINDOW = int(os.getenv("RATE_LIMIT_CHAT_WINDOW", "60"))
-RATE_LIMIT_UPLOAD_REQUESTS = int(os.getenv("RATE_LIMIT_UPLOAD_REQUESTS", "5"))
+RATE_LIMIT_UPLOAD_REQUESTS = int(os.getenv("RATE_LIMIT_UPLOAD_REQUESTS", "10"))
 RATE_LIMIT_UPLOAD_WINDOW = int(os.getenv("RATE_LIMIT_UPLOAD_WINDOW", "60"))
 
 # Prompt Injection & Jailbreak Defense
@@ -62,12 +66,12 @@ ENABLE_PRESIDIO_NER = os.getenv("ENABLE_PRESIDIO_NER", "false").lower() in ("tru
 ENABLE_INGESTION_GUARD = os.getenv("ENABLE_INGESTION_GUARD", "true").lower() in ("true", "1")
 
 # ── Per-Node Execution Timeouts (Seconds) ────────────────────────────────────
-TIMEOUT_ROUTER = float(os.getenv("TIMEOUT_ROUTER", "3.5"))
-TIMEOUT_RETRIEVAL = float(os.getenv("TIMEOUT_RETRIEVAL", "3.0"))
-TIMEOUT_RETRIEVAL_EVAL = float(os.getenv("TIMEOUT_RETRIEVAL_EVAL", "4.0"))
-TIMEOUT_WEB_SEARCH = float(os.getenv("TIMEOUT_WEB_SEARCH", "4.0"))
-TIMEOUT_GENERATION = float(os.getenv("TIMEOUT_GENERATION", "10.0"))
-TIMEOUT_GROUNDEDNESS = float(os.getenv("TIMEOUT_GROUNDEDNESS", "3.5"))
+TIMEOUT_ROUTER = float(os.getenv("TIMEOUT_ROUTER", "5.0"))
+TIMEOUT_RETRIEVAL = float(os.getenv("TIMEOUT_RETRIEVAL", "4.0"))
+TIMEOUT_RETRIEVAL_EVAL = float(os.getenv("TIMEOUT_RETRIEVAL_EVAL", "5.0"))
+TIMEOUT_WEB_SEARCH = float(os.getenv("TIMEOUT_WEB_SEARCH", "5.0"))
+TIMEOUT_GENERATION = float(os.getenv("TIMEOUT_GENERATION", "12.0"))
+TIMEOUT_GROUNDEDNESS = float(os.getenv("TIMEOUT_GROUNDEDNESS", "5.0"))
 
 # ── Context Token Budget & Length Ceilings (Characters) ──────────────────────
 MAX_DOC_CONTEXT_CHARS = int(os.getenv("MAX_DOC_CONTEXT_CHARS", "10000"))      # ~2,500 tokens

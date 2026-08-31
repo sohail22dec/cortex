@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, Dict
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -14,11 +15,24 @@ import config
 
 logger = logging.getLogger(__name__)
 
-_llm = ChatGroq(
-    model=config.GROQ_REASONING_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.7,
-)
+
+def _get_direct_llm():
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_FAST_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.7,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini direct LLM: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_FAST_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.7,
+        )
+
+
+_llm = _get_direct_llm()
 
 SYSTEM_PROMPT = """You are Cortex, a helpful and knowledgeable AI assistant.
 You answer questions clearly and concisely based on your training knowledge.

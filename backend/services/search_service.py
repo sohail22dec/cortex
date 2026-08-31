@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
@@ -17,12 +18,25 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# Fast LLM for query transformation
-_query_llm = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
-    api_key=config.GROQ_API_KEY,
-    temperature=0.0,
-)
+
+def _get_query_llm():
+    """Initializes query transform LLM with Gemini Flash-Lite, falling back to Groq."""
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_FAST_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.0,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini query LLM: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_FAST_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.0,
+        )
+
+
+_query_llm = _get_query_llm()
 
 
 class QueryTransform(BaseModel):

@@ -346,12 +346,24 @@ export default function Home() {
           id: loadingMsg.id,
           role: "assistant",
           content: data.answer || "Sorry, no answer could be synthesized.",
-          source: (data.source as "rag" | "llm" | "web_search") || "llm",
+          source: data.source || "llm",
           citations: data.citations || [],
           suggest_web_search: data.suggest_web_search || false,
           question: question,
           timestamp: currentTime,
-          chunksCount: data.source === "rag" ? 5 : undefined,
+          chunksCount: Array.isArray(data.chunks)
+            ? data.chunks.length
+            : data.source === "rag"
+            ? 5
+            : 0,
+          chunks: data.chunks || [],
+          webResults: data.web_results || [],
+          evaluationResult: data.evaluation_result,
+          evaluationReason: data.evaluation_reason,
+          isGrounded: data.is_grounded,
+          groundednessReason: data.groundedness_reason,
+          route: data.route,
+          transformedQuery: data.transformed_query,
         };
 
         setSessions((prev) => {

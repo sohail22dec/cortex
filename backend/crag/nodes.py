@@ -14,6 +14,7 @@ from services import (
     classify_async,
     evaluate_groundedness_async,
     evaluate_retrieval_async,
+    generate_direct_answer_async,
     generate_hybrid_answer_async,
     generate_rag_answer_async,
     generate_web_answer_async,
@@ -36,14 +37,13 @@ async def router_node(state: CRAGState) -> CRAGState:
     direct_answer = classification.get("direct_answer", "")
 
     is_unsafe = route == "unsafe"
-    is_direct = route == "direct_answer"
 
     return {
         **state,
         "route": route,
-        "answer": direct_answer if (is_direct or is_unsafe) else state.get("answer", ""),
-        "source": "guardrail" if is_unsafe else ("llm" if is_direct else state.get("source", "")),
-        "is_grounded": True if (is_direct or is_unsafe) else state.get("is_grounded", True),
+        "answer": direct_answer if is_unsafe else state.get("answer", ""),
+        "source": "guardrail" if is_unsafe else state.get("source", ""),
+        "is_grounded": True if is_unsafe else state.get("is_grounded", True),
     }
 
 
@@ -304,3 +304,28 @@ async def direct_web_search_node(state: CRAGState) -> CRAGState:
             "is_grounded": True,
         },
     )
+
+
+# ── 10. Direct Answer Node ───────────────────────────────────────────────────
+
+async def direct_answer_node(state: CRAGState) -> CRAGState:
+    """Synthesizes direct answer for general QA, coding, math, and greetings."""
+    question = state["question"]
+    try:
+        gen_result = await asyncio.wait_for(
+            generate_direct_answer_async(question),
+            timeout=config.TIMEOUT_GENERATION,
+        )
+        answer = gen_result["answer"]
+    except Exception as e:
+        logger.warning("Direct answer generation error: %s. Using default greeting.", e)
+        answer = "Hello! I am Cortex, your intelligent document-aware AI assistant. How can I assist you today?"
+
+    return {
+        **state,
+        "answer": answer,
+        "source": "llm",
+        "citations": [],
+        "is_grounded": True,
+    }
+

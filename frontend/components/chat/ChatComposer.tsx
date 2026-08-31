@@ -64,6 +64,7 @@ export function ChatComposer({
           placeholder="Ask anything about your documents..."
           disabled={isLoading}
           rows={1}
+          suppressHydrationWarning
           className="w-full bg-transparent border-0 outline-none text-zinc-100 text-sm placeholder:text-zinc-500 resize-none max-h-[180px] overflow-y-auto leading-relaxed py-1 px-1 font-sans"
         />
 
@@ -83,8 +84,10 @@ export function ChatComposer({
 
           {/* Right: Send Button */}
           <Button
+            type="button"
             onClick={handleSendClick}
             disabled={!canSend}
+            suppressHydrationWarning
             className={`h-9 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-all duration-200 ${
               canSend
                 ? "bg-[#6d5dfc] hover:bg-[#7f70ff] text-white shadow-md shadow-[#6d5dfc]/25 cursor-pointer active:scale-[0.98]"

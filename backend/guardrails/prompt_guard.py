@@ -33,12 +33,12 @@ _INJECTION_PATTERNS = [
         "Attempted to reset system prompt boundary",
     ),
     (
-        r"(?i)\b(repeat|print|output|show|reveal|echo)\s+(your\s+|the\s+)?(system\s+prompt|initial\s+instructions|core\s+prompt|base\s+instructions)\b",
+        r"(?i)\b(repeat|print|output|show|reveal|echo)\s+(your\s+|the\s+)?(secret\s+)?(system\s+prompt|initial\s+instructions|core\s+(prompt|instructions)|base\s+(prompt|instructions))\b",
         "SYSTEM_PROMPT_LEAK",
         "Attempted to exfiltrate system instructions",
     ),
     (
-        r"(?i)\b(what\s+is\s+your\s+system\s+prompt|what\s+are\s+your\s+secret\s+instructions)\b",
+        r"(?i)\b(what\s+(is|are)\s+(your\s+)?(secret\s+)?(system\s+prompt|core\s+instructions|secret\s+instructions|base\s+prompt))\b",
         "SYSTEM_PROMPT_LEAK",
         "Attempted to exfiltrate system instructions",
     ),

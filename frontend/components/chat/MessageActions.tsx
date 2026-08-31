@@ -16,25 +16,48 @@ import { toast } from "sonner";
 interface MessageActionsProps {
   content: string;
   timestamp?: string;
-  source?: "rag" | "llm" | "web_search";
+  source?: "rag" | "llm" | "web_search" | "hybrid" | "guardrail";
   chunksCount?: number;
+  chunks?: Array<{ source: string; text: string; similarity?: number }>;
+  webResults?: Array<{ title: string; url: string; content: string }>;
+  evaluationResult?: string;
+  evaluationReason?: string;
+  isGrounded?: boolean;
+  groundednessReason?: string;
+  route?: string;
+  transformedQuery?: string;
   question?: string;
   suggestWebSearch?: boolean;
   onWebSearchFallback?: (question: string) => void;
+  detailsOpen?: boolean;
+  setDetailsOpen?: (open: boolean) => void;
 }
 
 export function MessageActions({
   content,
   timestamp,
   source = "rag",
-  chunksCount = 5,
+  chunksCount = 0,
+  chunks = [],
+  webResults = [],
+  evaluationResult,
+  evaluationReason,
+  isGrounded,
+  groundednessReason,
+  route,
+  transformedQuery,
   question,
   suggestWebSearch,
   onWebSearchFallback,
+  detailsOpen: controlledDetailsOpen,
+  setDetailsOpen: controlledSetDetailsOpen,
 }: MessageActionsProps) {
   const [copied, setCopied] = useState(false);
   const [liked, setLiked] = useState<boolean | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [internalDetailsOpen, setInternalDetailsOpen] = useState(false);
+
+  const detailsOpen = controlledDetailsOpen ?? internalDetailsOpen;
+  const setDetailsOpen = controlledSetDetailsOpen ?? setInternalDetailsOpen;
 
   const handleCopy = () => {
     if (navigator.clipboard) {
@@ -55,6 +78,9 @@ export function MessageActions({
     toast.info("Feedback recorded. We will improve.");
   };
 
+  const actualChunksCount = chunks && chunks.length > 0 ? chunks.length : chunksCount;
+  const actualWebCount = webResults && webResults.length > 0 ? webResults.length : 5;
+
   return (
     <>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -63,6 +89,7 @@ export function MessageActions({
           <Button
             variant="ghost"
             size="icon-sm"
+            type="button"
             onClick={handleCopy}
             className="h-7 w-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/5"
             title="Copy answer"
@@ -77,6 +104,7 @@ export function MessageActions({
           <Button
             variant="ghost"
             size="icon-sm"
+            type="button"
             onClick={handleLike}
             className={`h-7 w-7 rounded-md hover:bg-white/5 ${
               liked === true ? "text-[#9d93ff]" : "text-zinc-400 hover:text-white"
@@ -89,6 +117,7 @@ export function MessageActions({
           <Button
             variant="ghost"
             size="icon-sm"
+            type="button"
             onClick={handleDislike}
             className={`h-7 w-7 rounded-md hover:bg-white/5 ${
               liked === false ? "text-red-400" : "text-zinc-400 hover:text-white"
@@ -102,6 +131,7 @@ export function MessageActions({
             <Button
               variant="outline"
               size="sm"
+              type="button"
               onClick={() => onWebSearchFallback(question)}
               className="ml-2 h-7 px-2.5 rounded-lg border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 text-xs font-medium flex items-center gap-1.5"
             >
@@ -119,25 +149,52 @@ export function MessageActions({
             </span>
           )}
 
-          {source === "rag" && (
+          {(source === "rag" || source === "hybrid") && (
             <button
+              type="button"
               onClick={() => setDetailsOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121824] border border-emerald-500/25 hover:border-emerald-500/50 text-[11px] text-emerald-400 font-medium transition-colors cursor-pointer group"
-              title="Click to view retrieval transparency details"
+              title="Click to view retrieved document chunks and verification details"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Retrieved {chunksCount} chunks</span>
+              <span>Retrieved {actualChunksCount} chunks</span>
               <ChevronDown className="w-3 h-3 text-emerald-400/70 group-hover:text-emerald-400 transition-transform" />
             </button>
           )}
 
           {source === "web_search" && (
             <button
+              type="button"
               onClick={() => setDetailsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121824] border border-amber-500/25 hover:border-amber-500/50 text-[11px] text-amber-400 font-medium transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121824] border border-amber-500/25 hover:border-amber-500/50 text-[11px] text-amber-400 font-medium transition-colors cursor-pointer group"
+              title="Click to view web search details and snippets"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              <span>Web Search</span>
+              <span>Web Search ({actualWebCount} sources)</span>
+              <ChevronDown className="w-3 h-3 text-amber-400/70 group-hover:text-amber-400 transition-transform" />
+            </button>
+          )}
+
+          {source === "llm" && (
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121824] border border-[#6d5dfc]/25 hover:border-[#6d5dfc]/50 text-[11px] text-[#9d93ff] font-medium transition-colors cursor-pointer"
+              title="Direct model reasoning without retrieval"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#9d93ff]" />
+              <span>Direct Knowledge</span>
+            </button>
+          )}
+
+          {source === "guardrail" && (
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121824] border border-red-500/25 hover:border-red-500/50 text-[11px] text-red-400 font-medium transition-colors cursor-pointer"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              <span>Safety Guardrail</span>
             </button>
           )}
         </div>
@@ -148,7 +205,15 @@ export function MessageActions({
         onOpenChange={setDetailsOpen}
         question={question}
         source={source}
-        chunksCount={chunksCount}
+        chunksCount={actualChunksCount}
+        chunks={chunks}
+        webResults={webResults}
+        evaluationResult={evaluationResult}
+        evaluationReason={evaluationReason}
+        isGrounded={isGrounded}
+        groundednessReason={groundednessReason}
+        route={route}
+        transformedQuery={transformedQuery}
       />
     </>
   );

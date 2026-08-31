@@ -1,4 +1,3 @@
-import logging
 import os
 
 import uvicorn
@@ -8,12 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.chat import router as chat_router
 from api.documents import router as documents_router
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Cortex API",

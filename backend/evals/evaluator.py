@@ -4,8 +4,9 @@ Evaluation Engine — Integrates Ragas and Cortex Groundedness/Relevance Metrics
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -17,13 +18,21 @@ logger = logging.getLogger(__name__)
 
 # ── Evaluator LLM Initialization ──────────────────────────────────────────────
 
-def get_evaluator_llm() -> ChatGroq:
-    """Returns a ChatGroq instance for LLM-as-a-judge evaluations."""
-    return ChatGroq(
-        model=config.GROQ_REASONING_MODEL,
-        api_key=config.GROQ_API_KEY,
-        temperature=0.0,
-    )
+def get_evaluator_llm():
+    """Returns a ChatGoogleGenerativeAI instance (or ChatGroq fallback) for LLM-as-a-judge evaluations."""
+    try:
+        return ChatGoogleGenerativeAI(
+            model=config.GEMINI_FAST_MODEL,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.0,
+        )
+    except Exception as e:
+        logger.warning("Could not initialize Gemini evaluator judge: %s. Falling back to Groq.", e)
+        return ChatGroq(
+            model=config.GROQ_FAST_MODEL,
+            api_key=config.GROQ_API_KEY,
+            temperature=0.0,
+        )
 
 
 # ── Fast Standalone LLM-as-a-Judge Metric Functions ───────────────────────────
