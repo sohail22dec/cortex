@@ -147,13 +147,13 @@ GEMINI_API_KEY=...                  # Google Gemini API key
 Optional behavior toggles (all in `backend/config.py`):
 
 ```bash
-GROQ_REASONING_MODEL=qwen/qwen3.6-27b      # Main synthesis model
+GROQ_REASONING_MODEL=openai/gpt-oss-120b      # Main synthesis model
 GROQ_FAST_MODEL=openai/gpt-oss-20b           # Router/evaluator/judge model
 ENABLE_RATE_LIMITING=true
 ENABLE_PROMPT_GUARD=true
 ENABLE_PII_REDACTION=true
 ENABLE_INGESTION_GUARD=true
-ENABLE_LANGSMITH=false
+LANGCHAIN_TRACING_V2=true                    # Optional: enable LangSmith tracing
 LANGCHAIN_API_KEY=...                        # Only needed if LangSmith tracing enabled
 LANGCHAIN_PROJECT=cortex
 ```
@@ -293,15 +293,8 @@ There are currently no automated frontend tests in the repository. Manual verifi
 - Inline SVGs are used instead of icon libraries.
 - `localStorage` is used for persistent session and user-id state on the client.
 
-### As of this writing, the frontend has known lint issues
-
-Running `pnpm lint` in `frontend/` currently reports several ESLint errors/warnings in `app/page.tsx`, including:
-
-- `react-hooks/set-state-in-effect` — avoid calling `setState` directly inside `useEffect`.
-- `react-hooks/exhaustive-deps` — missing memoization for derived values used as effect dependencies.
-- `prefer-const` — `let activeIdx` is never reassigned.
-
-These warnings/errors should be addressed when modifying `app/page.tsx`.
+### Frontend Code Quality
+- The frontend passes ESLint 9 (`pnpm lint`) and Next.js production builds (`pnpm build`) with zero errors.
 
 ---
 

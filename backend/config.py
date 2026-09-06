@@ -4,18 +4,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Groq LLMs (Sole LLM Provider for reasoning, generation, routing, and judging)
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") or "gsk_mock_fallback_key_for_ci_testing"
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY") or "tvly-mock-fallback-key-for-ci"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 GROQ_REASONING_MODEL = os.getenv("GROQ_REASONING_MODEL", "openai/gpt-oss-120b")
 GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
 
 # Supabase (vector store + future auth & sessions)
-SUPABASE_URL = os.getenv("SUPABASE_URL") or "https://mockproject.supabase.co"
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or "mock-supabase-service-key"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Google Gemini (cloud embeddings — no local model, no RAM spikes)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "mock-gemini-key-for-ci"
-GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"  # 3072-dim, truncated to 768 via MRL
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 
 # Chunking config
 CHUNK_SIZE = 1000
@@ -25,21 +25,6 @@ CHUNK_OVERLAP = 200
 TOP_K_RESULTS = 5
 SIMILARITY_THRESHOLD = 0.3
 
-# LangSmith Tracing Config
-_enable_tracing = os.getenv("ENABLE_LANGSMITH", "false").lower() in ("true", "1")
-_api_key = os.getenv("LANGCHAIN_API_KEY") or os.getenv("LANGSMITH_API_KEY", "")
-_project = os.getenv("LANGCHAIN_PROJECT") or os.getenv("LANGSMITH_PROJECT", "cortex")
-
-if _enable_tracing and _api_key:
-    os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGSMITH_TRACING"] = "true"
-    os.environ["LANGCHAIN_API_KEY"] = _api_key
-    os.environ["LANGSMITH_API_KEY"] = _api_key
-    os.environ["LANGCHAIN_PROJECT"] = _project
-    os.environ["LANGSMITH_PROJECT"] = _project
-else:
-    os.environ["LANGCHAIN_TRACING_V2"] = "false"
-    os.environ["LANGSMITH_TRACING"] = "false"
 # ── Layer 1: Frontline Guardrails Configuration ──────────────────────────────
 # Rate Limiting & Throttling (increased ceiling to prevent benchmark bottlenecks)
 ENABLE_RATE_LIMITING = os.getenv("ENABLE_RATE_LIMITING", "true").lower() in ("true", "1")
