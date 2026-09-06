@@ -9,7 +9,7 @@ from typing_extensions import TypedDict
 
 class CRAGState(TypedDict):
     question: str
-    conversation_history: str           # Prior dialogue context for answer generation
+    conversation_history: Any           # Prior dialogue context for answer generation (native turns or str)
     session_id: str
     has_documents: bool
     document_names: List[str]

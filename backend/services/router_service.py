@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -20,13 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class RouteDecision(BaseModel):
-    reason: str = Field(
-        default="",
-        description=(
-            "Brief 1-sentence step-by-step reasoning evaluating user intent against document topics, "
-            "temporal freshness requirements, and safety rules."
-        ),
-    )
     route: Literal["rag", "web_search", "direct_answer", "unsafe"] = Field(
         description=(
             "The selected execution route: "
@@ -80,30 +73,31 @@ def _build_system_prompt(has_documents: bool, documents: list) -> str:
 
     if has_documents and documents:
         doc_context = _format_documents(documents)
-        rag_rule = f"""2. "rag" — The question is about content in the user's uploaded documents.
-   Active Uploaded Documents:
+        rag_section = f"""- "rag": Inquiries seeking internal facts, proprietary guidelines, procedures, or domain specifics contained within the user's uploaded documents:
 {doc_context}
-   CLASSIFY AS "rag" IF ANY OF THESE ARE TRUE:
-   - The question relates to topics, subjects, or domains of the active uploaded files above.
-   - The user uses references like "this document", "the file", "the report", "what does it say", "summarize this".
-   - The user asks for specific internal facts stored in these files."""
+  Choose "rag" when the question seeks information specific to these documents or asks to analyze, extract, or summarize uploaded material."""
     else:
         # Dynamic Token Pruning: omit RAG rule if no documents exist
-        rag_rule = """2. "rag" — (DISABLED: No documents are currently uploaded by the user)."""
+        rag_section = """- "rag": (DISABLED: No documents are currently uploaded by the user)."""
 
-    return f"""You are Cortex, a helpful, intelligent, document-aware AI assistant.
+    return f"""You are the intent classification engine for Cortex, an intelligent AI assistant.
 Today's date is: {current_date}.
 
-Your job is to classify the user's intent into exactly one of the following 4 routes:
+Analyze the user's active query and classify their primary intent into the single most appropriate execution route:
 
-1. "unsafe" — The request asks for malware/ransomware generation, vulnerability exploit scripts, DDoS payloads, cyberattack instructions, dangerous chemical/explosive weapons, severe hate speech, or self-harm.
+- "unsafe": Requests involving weapon creation, cyberattacks, exploit payloads, malware generation, severe harassment, or self-harm.
 
-{rag_rule}
+{rag_section}
 
-3. "web_search" — The question requires current, recent, or live real-time information (e.g. today's news, stock market updates, recent sports/events, weather, or begins with "Search the web for").
+- "web_search": Inquiries requiring real-time, live, or time-sensitive external information (such as today's breaking news, recent events, live financial markets, current weather, or begins with "Search the web for").
 
-4. "direct_answer" — Greetings ("hi", "who are you"), general concepts, explanations, coding questions, math problems, or creative writing that do NOT require uploaded documents or live web data.
-   Examples: "What is machine learning?", "Write a Python function for Fibonacci", "Explain relativity", "Calculate derivative"."""
+- "direct_answer": General knowledge, conceptual explanations, coding assistance, mathematical calculations, logic problems, creative writing, or casual greetings that do not require external documents or real-time data.
+
+Decision Guidelines:
+- If a query is a general concept (e.g. "Explain binary search", "What is machine learning?") that has no dependency on uploaded files, prefer "direct_answer".
+- If a query pertains to the specific topics, policies, or content of the uploaded files, route to "rag".
+- Prioritize user safety above all other routes."""
+
 
 
 def _build_messages(question: str, has_documents: bool, documents: list) -> list:
@@ -135,7 +129,7 @@ async def classify_async(
             timeout=config.TIMEOUT_ROUTER,
         )
         route = decision.route
-        reason = decision.reason
+        reason = getattr(decision, "reason", "")
     except Exception as e:
         logger.warning("Primary router failed: %s. Falling back to Gemini.", e)
 
@@ -147,7 +141,7 @@ async def classify_async(
                 timeout=config.TIMEOUT_ROUTER,
             )
             route = decision.route
-            reason = decision.reason
+            reason = getattr(decision, "reason", "")
         except Exception as e:
             logger.warning("Gemini router fallback error: %s. Using default.", e)
 

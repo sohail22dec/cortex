@@ -11,20 +11,10 @@ from langchain_core.documents import Document
 
 from rag.document_processor import extract_structural_topics
 from rag import vector_store as vs
-from services.router_service import (
-    RouteDecision,
-    _build_system_prompt,
-    _format_documents,
-    classify_async,
-)
+from services.router_service import _build_system_prompt
 
 
 class TestContextEngineering(unittest.TestCase):
-    def test_schema_reasoning_first(self):
-        """Ensure reason field is defined before route for autoregressive scratchpad benefit."""
-        fields = list(RouteDecision.model_fields.keys())
-        self.assertEqual(fields[0], "reason")
-        self.assertEqual(fields[1], "route")
 
     def test_dynamic_token_pruning_no_docs(self):
         """When has_documents is False, RAG instructions should be omitted to minimize prompt tokens."""
@@ -155,7 +145,35 @@ class TestContextEngineering(unittest.TestCase):
         self.assertIn("Document Context:\n\nRefunds are processed within 5 business days.", prompt)
         self.assertIn("Question: What is the refund turnaround time?", prompt)
 
+    def test_native_message_turns_formatting(self):
+        """Test Approach 1: Native message turns are serialized into alternating Human/AI turns."""
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        from services.generator_service import _build_generator_messages
+
+        turns = [
+            HumanMessage(content="Tell me about Novacore"),
+            AIMessage(content="Novacore is our caching service."),
+        ]
+        messages = _build_generator_messages(
+            system_prompt="You are Cortex.",
+            context_label="Document Context",
+            context="Novacore has 24h TTL.",
+            question="What is its TTL?",
+            conversation_history=turns,
+        )
+        self.assertEqual(len(messages), 4)
+        self.assertIsInstance(messages[0], SystemMessage)
+        self.assertEqual(messages[0].content, "You are Cortex.")
+        self.assertIsInstance(messages[1], HumanMessage)
+        self.assertEqual(messages[1].content, "Tell me about Novacore")
+        self.assertIsInstance(messages[2], AIMessage)
+        self.assertEqual(messages[2].content, "Novacore is our caching service.")
+        self.assertIsInstance(messages[3], HumanMessage)
+        self.assertIn("Document Context:\n\nNovacore has 24h TTL.", messages[3].content)
+        self.assertIn("Question: What is its TTL?", messages[3].content)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -18,6 +18,7 @@ from rag import storage_service, vector_store as vs
 from services.conversation_service import (
     delete_conversation,
     get_conversation_context,
+    get_native_conversation_turns,
     save_message,
 )
 
@@ -102,17 +103,17 @@ async def chat(request: ChatRequest):
         pii_res = await redact_pii_async(request.message)
         processed_query = pii_res.sanitized_text
 
-        # ── Conversation Memory ─────────────────────────────────────────────
-        # Fetch prior context for dialogue history while keeping the retrieval
-        # query clean to avoid vector similarity pollution.
-        prior_context = await get_conversation_context(request.session_id)
+        # ── Conversation Memory (Native Turns) ─────────────────────────────
+        # Fetch prior dialogue turns as native LangChain messages (summarized
+        # if over budget) while keeping the retrieval query 100% clean.
+        prior_turns = await get_native_conversation_turns(request.session_id)
 
         # ── CRAG Workflow Execution ───────────────────────────────────────────
         result = await run_crag_async(
             session_id=request.session_id,
             question=processed_query,
             user_id=request.user_id,
-            conversation_history=prior_context or "",
+            conversation_history=prior_turns,
         )
 
         # ── Layer 3 Guardrail: Output Scrubbing & Citation Verification ───────

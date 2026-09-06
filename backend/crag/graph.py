@@ -91,7 +91,7 @@ async def run_crag_async(
     session_id: str,
     question: str,
     user_id: str | None = None,
-    conversation_history: str = "",
+    conversation_history: Any = "",
 ) -> Dict[str, Any]:
     """Asynchronously execute the CRAG workflow without blocking the event loop."""
     try:

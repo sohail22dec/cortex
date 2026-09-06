@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
@@ -180,7 +180,7 @@ def _format_user_prompt(
     conversation_history: str = "",
 ) -> str:
     parts = []
-    if conversation_history:
+    if conversation_history and isinstance(conversation_history, str):
         parts.append(f"<conversation_history>\n{conversation_history}\n</conversation_history>")
     if context:
         parts.append(f"{context_label}:\n\n{context}")
@@ -188,21 +188,57 @@ def _format_user_prompt(
     return "\n\n".join(parts)
 
 
+def _build_generator_messages(
+    system_prompt: str,
+    context_label: str,
+    context: str,
+    question: str,
+    conversation_history: str | list[Any] = "",
+) -> list[BaseMessage]:
+    """
+    Builds the message list for the generator model using Approach 1 (Native Message Turns):
+    1. SystemMessage (Static persona and rules -> CACHED)
+    2. Native past conversation turns (HumanMessage / AIMessage / summary context)
+    3. Active turn HumanMessage (Document/Web Context + Question)
+    """
+    messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
+
+    if isinstance(conversation_history, list) and conversation_history:
+        for msg in conversation_history:
+            if isinstance(msg, BaseMessage):
+                messages.append(msg)
+            elif isinstance(msg, dict):
+                role = msg.get("role", "user")
+                c = msg.get("content", "")
+                if role == "assistant":
+                    messages.append(AIMessage(content=c))
+                elif role == "system":
+                    messages.append(SystemMessage(content=c))
+                else:
+                    messages.append(HumanMessage(content=c))
+
+        active_parts = []
+        if context:
+            active_parts.append(f"{context_label}:\n\n{context}")
+        active_parts.append(f"Question: {question}")
+        messages.append(HumanMessage(content="\n\n".join(active_parts)))
+    else:
+        user_content = _format_user_prompt(context_label, context, question, str(conversation_history or ""))
+        messages.append(HumanMessage(content=user_content))
+
+    return messages
+
+
 async def generate_rag_answer_async(
     question: str,
     chunks: List[Dict[str, Any]],
     strict: bool = False,
-    conversation_history: str = "",
+    conversation_history: str | list[Any] = "",
 ) -> Dict[str, Any]:
     """Generates an answer from document chunks with budget-capped context and conversation awareness."""
     context = build_doc_context(chunks, max_chars=config.MAX_DOC_CONTEXT_CHARS)
     prompt = STRICT_RAG_SYSTEM_PROMPT if strict else RAG_SYSTEM_PROMPT
-    user_content = _format_user_prompt("Document Context", context, question, conversation_history)
-
-    messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(content=user_content),
-    ]
+    messages = _build_generator_messages(prompt, "Document Context", context, question, conversation_history)
     answer = await _ainvoke_generator(messages)
     sources = sorted(list({c.get("source", "Unknown") for c in chunks if c.get("source")}))
 
@@ -216,7 +252,7 @@ async def generate_rag_answer_async(
 async def generate_web_answer_async(
     question: str,
     web_results: List[Dict[str, Any]],
-    conversation_history: str = "",
+    conversation_history: str | list[Any] = "",
 ) -> Dict[str, Any]:
     """Generates an answer from clean web search results with budget-capped context and conversation awareness."""
     if not web_results:
@@ -228,12 +264,7 @@ async def generate_web_answer_async(
 
     context = build_web_context(web_results, max_chars=config.MAX_WEB_CONTEXT_CHARS)
     urls = [r.get("url", "") for r in web_results if r.get("url")]
-    user_content = _format_user_prompt("Web Search Results", context, question, conversation_history)
-
-    messages = [
-        SystemMessage(content=WEB_SYSTEM_PROMPT),
-        HumanMessage(content=user_content),
-    ]
+    messages = _build_generator_messages(WEB_SYSTEM_PROMPT, "Web Search Results", context, question, conversation_history)
     answer = await _ainvoke_generator(messages)
 
     return {
@@ -247,7 +278,7 @@ async def generate_hybrid_answer_async(
     question: str,
     chunks: List[Dict[str, Any]],
     web_results: List[Dict[str, Any]],
-    conversation_history: str = "",
+    conversation_history: str | list[Any] = "",
 ) -> Dict[str, Any]:
     """Generates an answer combining document chunks and supplementary web search results with balanced budgets."""
     doc_context = build_doc_context(chunks, max_chars=config.MAX_HYBRID_DOC_CHARS)
@@ -258,12 +289,7 @@ async def generate_hybrid_answer_async(
     doc_sources = [c.get("source", "Unknown") for c in chunks if c.get("source")]
     web_urls = [r.get("url", "") for r in web_results if r.get("url")]
     citations = list(set(doc_sources + web_urls[:2]))
-    user_content = _format_user_prompt("Provided Sources", combined_context, question, conversation_history)
-
-    messages = [
-        SystemMessage(content=HYBRID_SYSTEM_PROMPT),
-        HumanMessage(content=user_content),
-    ]
+    messages = _build_generator_messages(HYBRID_SYSTEM_PROMPT, "Provided Sources", combined_context, question, conversation_history)
     answer = await _ainvoke_generator(messages)
 
     return {
@@ -275,14 +301,10 @@ async def generate_hybrid_answer_async(
 
 async def generate_direct_answer_async(
     question: str,
-    conversation_history: str = "",
+    conversation_history: str | list[Any] = "",
 ) -> Dict[str, Any]:
     """Generates a sub-second direct answer using Groq 20b primary with Gemini Flash-Lite fallback."""
-    user_content = _format_user_prompt("", "", question, conversation_history) if conversation_history else question
-    messages = [
-        SystemMessage(content=DIRECT_SYSTEM_PROMPT),
-        HumanMessage(content=user_content),
-    ]
+    messages = _build_generator_messages(DIRECT_SYSTEM_PROMPT, "", "", question, conversation_history)
     answer = ""
     # 1. Attempt Groq 20b fast direct synthesis
     try:

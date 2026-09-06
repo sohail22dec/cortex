@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import List
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
 import config
@@ -143,3 +143,46 @@ async def get_conversation_context(session_id: str) -> str:
         )
 
     return _format_messages(recent)
+
+
+async def get_native_conversation_turns(session_id: str) -> List[BaseMessage]:
+    """
+    Returns prior conversation turns as native LangChain messages (HumanMessage, AIMessage).
+    - If total estimated tokens are within budget, returns all messages as native turns.
+    - If over budget, older messages are summarized into a concise SystemMessage context,
+      and only the last MAX_RECENT_MESSAGES are kept as verbatim dialogue turns.
+    """
+    messages = get_messages(session_id)
+    if not messages:
+        return []
+
+    total_tokens = sum(_estimate_tokens(m.content) for m in messages)
+
+    if total_tokens <= config.MAX_CONVERSATION_TOKENS:
+        turns: List[BaseMessage] = []
+        for m in messages:
+            if m.role == "user":
+                turns.append(HumanMessage(content=m.content))
+            else:
+                turns.append(AIMessage(content=m.content))
+        return turns
+
+    # Over budget: summarize older messages, keep the last MAX_RECENT_MESSAGES verbatim
+    recent = messages[-config.MAX_RECENT_MESSAGES :]
+    older = messages[: -config.MAX_RECENT_MESSAGES]
+
+    turns: List[BaseMessage] = []
+    if older:
+        summary = await _summarize_messages(older)
+        turns.append(
+            SystemMessage(content=f"Context from earlier conversation:\n{summary}")
+        )
+
+    for m in recent:
+        if m.role == "user":
+            turns.append(HumanMessage(content=m.content))
+        else:
+            turns.append(AIMessage(content=m.content))
+
+    return turns
+
