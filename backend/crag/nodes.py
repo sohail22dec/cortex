@@ -175,13 +175,20 @@ async def generate_node(state: CRAGState) -> CRAGState:
     retry_count = state.get("groundedness_retry_count", 0)
     strict_mode = retry_count > 0
 
+    conversation_history = state.get("conversation_history", "")
     try:
         if eval_result == "CORRECT":
-            coro = generate_rag_answer_async(question, chunks, strict=strict_mode)
+            coro = generate_rag_answer_async(
+                question, chunks, strict=strict_mode, conversation_history=conversation_history
+            )
         elif eval_result == "INCORRECT":
-            coro = generate_web_answer_async(question, web_results)
+            coro = generate_web_answer_async(
+                question, web_results, conversation_history=conversation_history
+            )
         else:  # AMBIGUOUS
-            coro = generate_hybrid_answer_async(question, chunks, web_results)
+            coro = generate_hybrid_answer_async(
+                question, chunks, web_results, conversation_history=conversation_history
+            )
 
         result = await asyncio.wait_for(coro, timeout=config.TIMEOUT_GENERATION)
     except asyncio.TimeoutError:
@@ -284,7 +291,9 @@ async def direct_web_search_node(state: CRAGState) -> CRAGState:
             timeout=config.TIMEOUT_WEB_SEARCH,
         )
         gen_result = await asyncio.wait_for(
-            generate_web_answer_async(state["question"], results),
+            generate_web_answer_async(
+                state["question"], results, conversation_history=state.get("conversation_history", "")
+            ),
             timeout=config.TIMEOUT_GENERATION,
         )
     except Exception as e:
@@ -318,7 +327,9 @@ async def direct_answer_node(state: CRAGState) -> CRAGState:
     question = state["question"]
     try:
         gen_result = await asyncio.wait_for(
-            generate_direct_answer_async(question),
+            generate_direct_answer_async(
+                question, conversation_history=state.get("conversation_history", "")
+            ),
             timeout=config.TIMEOUT_GENERATION,
         )
         answer = gen_result["answer"]

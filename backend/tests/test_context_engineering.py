@@ -140,6 +140,22 @@ class TestContextEngineering(unittest.TestCase):
         self.assertEqual(profiles[0]["filename"], "manual.pdf")
         self.assertEqual(profiles[0]["topics"], "")
 
+    def test_conversation_history_formatting(self):
+        """Test formatting of conversation history and decoupled context in prompt builder."""
+        from services.generator_service import _format_user_prompt
+        prompt = _format_user_prompt(
+            context_label="Document Context",
+            context="Refunds are processed within 5 business days.",
+            question="What is the refund turnaround time?",
+            conversation_history="User: Hello\nAssistant: Hi, how can I help?",
+        )
+        self.assertIn("<conversation_history>", prompt)
+        self.assertIn("User: Hello\nAssistant: Hi, how can I help?", prompt)
+        self.assertIn("</conversation_history>", prompt)
+        self.assertIn("Document Context:\n\nRefunds are processed within 5 business days.", prompt)
+        self.assertIn("Question: What is the refund turnaround time?", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -28,6 +28,7 @@ def _create_test_state(**kwargs: Any) -> CRAGState:
     """Helper to build a complete, strictly-typed CRAGState fixture."""
     state: CRAGState = {
         "question": "test question",
+        "conversation_history": "",
         "session_id": "test-session",
         "has_documents": False,
         "document_names": [],

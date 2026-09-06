@@ -103,19 +103,16 @@ async def chat(request: ChatRequest):
         processed_query = pii_res.sanitized_text
 
         # ── Conversation Memory ─────────────────────────────────────────────
-        # Fetch prior context. If over the token budget, older messages are
-        # summarized and only the last MAX_RECENT_MESSAGES are kept verbatim.
+        # Fetch prior context for dialogue history while keeping the retrieval
+        # query clean to avoid vector similarity pollution.
         prior_context = await get_conversation_context(request.session_id)
-        if prior_context:
-            augmented_question = f"{prior_context}\n\nCurrent question: {processed_query}"
-        else:
-            augmented_question = processed_query
 
         # ── CRAG Workflow Execution ───────────────────────────────────────────
         result = await run_crag_async(
             session_id=request.session_id,
-            question=augmented_question,
+            question=processed_query,
             user_id=request.user_id,
+            conversation_history=prior_context or "",
         )
 
         # ── Layer 3 Guardrail: Output Scrubbing & Citation Verification ───────

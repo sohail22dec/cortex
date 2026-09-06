@@ -88,7 +88,10 @@ _crag_graph = _build_crag_graph()
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def run_crag_async(
-    session_id: str, question: str, user_id: str | None = None
+    session_id: str,
+    question: str,
+    user_id: str | None = None,
+    conversation_history: str = "",
 ) -> Dict[str, Any]:
     """Asynchronously execute the CRAG workflow without blocking the event loop."""
     try:
@@ -119,6 +122,7 @@ async def run_crag_async(
 
     initial_state: CRAGState = {
         "question": question,
+        "conversation_history": conversation_history,
         "session_id": doc_session_id,
         "has_documents": has_docs,
         "document_names": doc_names,

@@ -5,7 +5,6 @@ Uses Google Gemini Flash-Lite (with Groq fallback) with Pydantic structured outp
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal
