@@ -31,6 +31,7 @@ def _create_test_state(**kwargs: Any) -> CRAGState:
         "session_id": "test-session",
         "has_documents": False,
         "document_names": [],
+        "document_profiles": [],
         "route": "direct_answer",
         "chunks": [],
         "refined_chunks": [],

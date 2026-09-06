@@ -105,10 +105,16 @@ async def run_crag_async(
             if has_docs
             else []
         )
+        doc_profiles = (
+            await asyncio.to_thread(vs.get_document_profiles, doc_session_id)
+            if has_docs
+            else []
+        )
     except Exception as e:
         logger.warning("Could not fetch vector store details: %s. Assuming no docs.", e)
         has_docs = False
         doc_names = []
+        doc_profiles = []
         doc_session_id = session_id
 
     initial_state: CRAGState = {
@@ -116,6 +122,7 @@ async def run_crag_async(
         "session_id": doc_session_id,
         "has_documents": has_docs,
         "document_names": doc_names,
+        "document_profiles": doc_profiles,
         "route": "",
         "chunks": [],
         "refined_chunks": [],

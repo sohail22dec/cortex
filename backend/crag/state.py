@@ -12,6 +12,7 @@ class CRAGState(TypedDict):
     session_id: str
     has_documents: bool
     document_names: List[str]
+    document_profiles: List[Dict[str, Any]]
     route: str                          # "rag" | "llm" | "web_search"
     
     # Retrieval & Evaluation

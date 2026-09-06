@@ -57,7 +57,9 @@ class TestSessionsAPI(unittest.TestCase):
 
         vs.delete_session_documents("test-session-xyz")
 
-        mock_get_client.return_value.table.assert_called_once_with("document_chunks")
-        mock_table.delete.assert_called_once()
-        mock_delete.eq.assert_called_once_with("session_id", "test-session-xyz")
-        mock_eq.execute.assert_called_once()
+        table_calls = [c[0][0] for c in mock_get_client.return_value.table.call_args_list]
+        self.assertIn("document_chunks", table_calls)
+        self.assertIn("documents", table_calls)
+        self.assertEqual(mock_table.delete.call_count, 2)
+        mock_delete.eq.assert_any_call("session_id", "test-session-xyz")
+

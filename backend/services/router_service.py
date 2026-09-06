@@ -7,7 +7,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Literal
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -20,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class RouteDecision(BaseModel):
+    reason: str = Field(
+        default="",
+        description=(
+            "Brief 1-sentence step-by-step reasoning evaluating user intent against document topics, "
+            "temporal freshness requirements, and safety rules."
+        ),
+    )
     route: Literal["rag", "web_search", "direct_answer", "unsafe"] = Field(
         description=(
             "The selected execution route: "
@@ -29,15 +37,11 @@ class RouteDecision(BaseModel):
             "'unsafe' for requests asking for malware, cyberattacks, exploit payloads, dangerous weapons, harassment, or self-harm."
         )
     )
-    reason: str = Field(
-        default="",
-        description="Brief explanation of why this route was selected",
-    )
 
 
 # Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) structured router models
 _groq_router = ChatGroq(
-    model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
+    model=config.GEMINI_FAST_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 ).with_structured_output(RouteDecision)
@@ -53,47 +57,79 @@ except Exception as e:
     logger.warning("Could not initialize Gemini router: %s", e)
     _gemini_router = None
 
-ROUTER_SYSTEM_PROMPT = """You are Cortex, a helpful, intelligent, document-aware AI assistant.
+
+def _format_documents(documents: list) -> str:
+    """Format documents with their extracted topics for the system prompt."""
+    if not documents:
+        return "None"
+    lines = []
+    for doc in documents:
+        if isinstance(doc, dict):
+            name = doc.get("filename") or doc.get("name") or "Unknown"
+            topics = doc.get("topics", "").strip()
+            if topics:
+                lines.append(f'   - "{name}" (Topics: {topics})')
+            else:
+                lines.append(f'   - "{name}"')
+        else:
+            lines.append(f'   - "{doc}"')
+    return "\n".join(lines)
+
+
+def _build_system_prompt(has_documents: bool, documents: list) -> str:
+    current_date = datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+    if has_documents and documents:
+        doc_context = _format_documents(documents)
+        rag_rule = f"""2. "rag" — The question is about content in the user's uploaded documents.
+   Active Uploaded Documents:
+{doc_context}
+   CLASSIFY AS "rag" IF ANY OF THESE ARE TRUE:
+   - The question relates to topics, subjects, or domains of the active uploaded files above.
+   - The user uses references like "this document", "the file", "the report", "what does it say", "summarize this".
+   - The user asks for specific internal facts stored in these files."""
+    else:
+        # Dynamic Token Pruning: omit RAG rule if no documents exist
+        rag_rule = """2. "rag" — (DISABLED: No documents are currently uploaded by the user)."""
+
+    return f"""You are Cortex, a helpful, intelligent, document-aware AI assistant.
+Today's date is: {current_date}.
+
 Your job is to classify the user's intent into exactly one of the following 4 routes:
 
 1. "unsafe" — The request asks for malware/ransomware generation, vulnerability exploit scripts, DDoS payloads, cyberattack instructions, dangerous chemical/explosive weapons, severe hate speech, or self-harm.
 
-2. "rag" — The question is about content in the user's uploaded documents or corporate policies.
-   CLASSIFY AS "rag" IF ANY OF THESE ARE TRUE:
-   - The question relates to topics, subjects, titles, or domains of the active uploaded files: {document_names}
-   - The user uses references like "this document", "the file", "the report", "what does it say", "summarize this", "the policy", "Novacore".
-   - has_documents is True and the user asks for specific factual information stored in corporate/uploaded files.
+{rag_rule}
 
-3. "web_search" — The question requires current, recent, or live real-time information.
-   Examples: latest news today, current stock market trends, weather forecasts, recent international events, or begins with "Search the web for".
+3. "web_search" — The question requires current, recent, or live real-time information (e.g. today's news, stock market updates, recent sports/events, weather, or begins with "Search the web for").
 
 4. "direct_answer" — Greetings ("hi", "who are you"), general concepts, explanations, coding questions, math problems, or creative writing that do NOT require uploaded documents or live web data.
-   Examples: "What is machine learning?", "Write a Python function for Fibonacci", "Explain relativity", "Calculate derivative".
-
-Active state: has_documents={has_documents}, document_names={document_names}"""
+   Examples: "What is machine learning?", "Write a Python function for Fibonacci", "Explain relativity", "Calculate derivative"."""
 
 
-def _build_messages(question: str, has_documents: bool, document_names: list) -> list:
-    prompt = (
-        ROUTER_SYSTEM_PROMPT
-        .replace("{has_documents}", str(has_documents))
-        .replace("{document_names}", json.dumps(document_names))
-    )
+def _build_messages(question: str, has_documents: bool, documents: list) -> list:
+    prompt = _build_system_prompt(has_documents, documents)
     return [
         SystemMessage(content=prompt),
         HumanMessage(content=f"User Query: {question}"),
     ]
 
 
-async def classify_async(question: str, has_documents: bool, document_names: list) -> Dict[str, Any]:
-    """Asynchronously classify user question with Groq 120b primary and Gemini Flash-Lite fallback."""
+async def classify_async(
+    question: str,
+    has_documents: bool,
+    document_names: list | None = None,
+    documents: list | None = None,
+) -> Dict[str, Any]:
+    """Asynchronously classify user question with Groq primary and Gemini Flash-Lite fallback."""
     if question.lower().startswith("search the web for "):
         return {"route": "web_search", "direct_answer": "", "reason": "UI button override"}
 
-    messages = _build_messages(question, has_documents, document_names)
+    docs = documents if documents is not None else (document_names or [])
+    messages = _build_messages(question, has_documents, docs)
     route, reason = "", ""
 
-    # 1. Attempt Groq 120b Primary
+    # 1. Attempt Primary
     try:
         decision: RouteDecision = await asyncio.wait_for(
             _groq_router.ainvoke(messages),
@@ -102,9 +138,9 @@ async def classify_async(question: str, has_documents: bool, document_names: lis
         route = decision.route
         reason = decision.reason
     except Exception as e:
-        logger.warning("Groq 120b router failed: %s. Falling back to Gemini.", e)
+        logger.warning("Primary router failed: %s. Falling back to Gemini.", e)
 
-    # 2. Fallback to Gemini Flash-Lite if Groq failed
+    # 2. Fallback to Gemini Flash-Lite if Primary failed
     if not route and _gemini_router:
         try:
             decision: RouteDecision = await asyncio.wait_for(
@@ -131,6 +167,12 @@ async def classify_async(question: str, has_documents: bool, document_names: lis
     return {"route": route, "direct_answer": direct_answer, "reason": reason}
 
 
-def classify(question: str, has_documents: bool, document_names: list) -> Dict[str, Any]:
+def classify(
+    question: str,
+    has_documents: bool,
+    document_names: list | None = None,
+    documents: list | None = None,
+) -> Dict[str, Any]:
     """Synchronous wrapper for classify_async."""
-    return asyncio.run(classify_async(question, has_documents, document_names))
+    return asyncio.run(classify_async(question, has_documents, document_names, documents))
+

@@ -30,9 +30,14 @@ logger = logging.getLogger(__name__)
 async def router_node(state: CRAGState) -> CRAGState:
     question = state["question"]
     has_documents = state["has_documents"]
+    doc_profiles = state.get("document_profiles", [])
     doc_names = state.get("document_names", [])
 
-    classification = await classify_async(question, has_documents, doc_names)
+    classification = await classify_async(
+        question=question,
+        has_documents=has_documents,
+        documents=doc_profiles or doc_names,
+    )
     route = classification["route"]
     direct_answer = classification.get("direct_answer", "")
 
