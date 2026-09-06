@@ -9,9 +9,8 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Literal, Tuple
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
 import config
@@ -51,18 +50,7 @@ class RetrievalEvaluation(BaseModel):
     )
 
 
-# Initialize Gemini (primary) and Groq (fallback) structured evaluator models
-try:
-    _gemini_evaluator = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.0,
-        max_retries=0,
-    ).with_structured_output(RetrievalEvaluation)
-except Exception as e:
-    logger.warning("Could not initialize Gemini evaluator: %s", e)
-    _gemini_evaluator = None
-
+# Initialize Groq structured evaluator model
 _groq_evaluator = ChatGroq(
     model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
@@ -116,26 +104,17 @@ async def evaluate_retrieval_async(
     messages = _build_evaluation_messages(question, chunks, document_names)
     result: RetrievalEvaluation | None = None
 
-    # 1. Attempt Gemini Primary
-    if _gemini_evaluator:
-        try:
-            result = await asyncio.wait_for(_gemini_evaluator.ainvoke(messages), timeout=config.TIMEOUT_RETRIEVAL_EVAL)
-        except Exception as e:
-            logger.warning("Gemini retrieval evaluator failed or hit quota: %s. Falling back to Groq.", e)
-
-    # 2. Fallback to Groq if Gemini failed
-    if not result:
-        try:
-            result = await asyncio.wait_for(_groq_evaluator.ainvoke(messages), timeout=config.TIMEOUT_RETRIEVAL_EVAL)
-        except Exception as e:
-            logger.warning("Groq retrieval evaluator fallback error: %s. Defaulting to CORRECT with all chunks.", e)
-            result = RetrievalEvaluation(
-                evaluation="CORRECT",
-                relevant_chunk_indices=list(range(1, len(chunks) + 1)),
-                rewritten_query_for_db=question,
-                rewritten_query_for_web=question,
-                reason="fallback",
-            )
+    try:
+        result = await asyncio.wait_for(_groq_evaluator.ainvoke(messages), timeout=config.TIMEOUT_RETRIEVAL_EVAL)
+    except Exception as e:
+        logger.warning("Groq retrieval evaluator error: %s. Defaulting to CORRECT with all chunks.", e)
+        result = RetrievalEvaluation(
+            evaluation="CORRECT",
+            relevant_chunk_indices=list(range(1, len(chunks) + 1)),
+            rewritten_query_for_db=question,
+            rewritten_query_for_web=question,
+            reason="fallback",
+        )
 
     indices = set(result.relevant_chunk_indices)
     refined_chunks = [chunk for i, chunk in enumerate(chunks, 1) if i in indices]

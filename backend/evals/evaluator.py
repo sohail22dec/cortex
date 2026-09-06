@@ -6,9 +6,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 import config
 from evals.dataset import EvalSample
@@ -16,41 +15,22 @@ from evals.dataset import EvalSample
 logger = logging.getLogger(__name__)
 
 
-# Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) judge models
+# Initialize Groq judge model
 _groq_judge_eval = ChatGroq(
     model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 )
 
-try:
-    _gemini_judge_eval = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,  # gemini-3.5-flash-lite
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.0,
-        max_retries=0,
-    )
-except Exception as e:
-    logger.warning("Could not initialize Gemini evaluator judge: %s", e)
-    _gemini_judge_eval = None
-
 
 async def _judge_ainvoke(messages: list) -> str:
-    """Invokes primary Groq 120b evaluator judge, immediately falling back to Gemini on failure."""
+    """Invokes Groq evaluator judge."""
     try:
         res = await _groq_judge_eval.ainvoke(messages)
         return str(res.content).strip()
     except Exception as e:
-        logger.warning("Groq 120b evaluator judge failed: %s. Falling back to Gemini.", e)
-
-    if _gemini_judge_eval:
-        try:
-            res = await _gemini_judge_eval.ainvoke(messages)
-            return str(res.content).strip()
-        except Exception as e:
-            logger.error("Gemini evaluator judge fallback failed: %s", e)
-
-    return "1.0"
+        logger.warning("Groq evaluator judge failed: %s.", e)
+        return "1.0"
 
 
 # ── Fast Standalone LLM-as-a-Judge Metric Functions ───────────────────────────

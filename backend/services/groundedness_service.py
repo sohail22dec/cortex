@@ -7,9 +7,8 @@ import asyncio
 import logging
 from typing import Literal, Tuple
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
 import config
@@ -30,23 +29,12 @@ class GroundednessEvaluation(BaseModel):
     )
 
 
-# Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) structured judge models
+# Initialize Groq structured judge model
 _groq_judge = ChatGroq(
     model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 ).with_structured_output(GroundednessEvaluation)
-
-try:
-    _gemini_judge = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,  # gemini-3.5-flash-lite
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.0,
-        max_retries=0,
-    ).with_structured_output(GroundednessEvaluation)
-except Exception as e:
-    logger.warning("Could not initialize Gemini judge: %s", e)
-    _gemini_judge = None
 
 
 async def evaluate_groundedness_async(
@@ -86,21 +74,10 @@ async def evaluate_groundedness_async(
 
     result: GroundednessEvaluation | None = None
 
-    # 1. Attempt Groq 120b Primary
     try:
         result = await asyncio.wait_for(_groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
     except Exception as e:
-        logger.warning("Groq 120b groundedness judge failed: %s. Falling back to Gemini.", e)
-
-    # 2. Fallback to Gemini Flash-Lite if Groq failed
-    if not result and _gemini_judge:
-        try:
-            result = await asyncio.wait_for(_gemini_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
-        except Exception as e:
-            logger.warning("Gemini groundedness judge fallback error: %s. Defaulting to grounded.", e)
-            return True, "fallback"
-
-    if not result:
+        logger.warning("Groq groundedness judge failed: %s. Defaulting to grounded.", e)
         return True, "fallback"
 
     is_grounded = result.is_grounded == "YES"

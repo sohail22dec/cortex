@@ -1,6 +1,6 @@
 """
 Router Service — Intelligent, document-aware LLM classifier.
-Uses Google Gemini Flash-Lite (with Groq fallback) with Pydantic structured outputs for high-speed routing and safety checks.
+Uses Groq with Pydantic structured outputs for high-speed routing and safety checks.
 """
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 
@@ -31,23 +30,12 @@ class RouteDecision(BaseModel):
     )
 
 
-# Initialize Groq 120b (primary) and Gemini Flash-Lite (fallback) structured router models
+# Initialize Groq structured router model
 _groq_router = ChatGroq(
-    model=config.GEMINI_FAST_MODEL,
+    model=config.GROQ_FAST_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 ).with_structured_output(RouteDecision)
-
-try:
-    _gemini_router = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,  # gemini-3.5-flash-lite
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.0,
-        max_retries=0,
-    ).with_structured_output(RouteDecision)
-except Exception as e:
-    logger.warning("Could not initialize Gemini router: %s", e)
-    _gemini_router = None
 
 
 def _format_documents(documents: list) -> str:
@@ -131,19 +119,7 @@ async def classify_async(
         route = decision.route
         reason = getattr(decision, "reason", "")
     except Exception as e:
-        logger.warning("Primary router failed: %s. Falling back to Gemini.", e)
-
-    # 2. Fallback to Gemini Flash-Lite if Primary failed
-    if not route and _gemini_router:
-        try:
-            decision: RouteDecision = await asyncio.wait_for(
-                _gemini_router.ainvoke(messages),
-                timeout=config.TIMEOUT_ROUTER,
-            )
-            route = decision.route
-            reason = getattr(decision, "reason", "")
-        except Exception as e:
-            logger.warning("Gemini router fallback error: %s. Using default.", e)
+        logger.warning("Router classification failed: %s. Using default.", e)
 
     if not route:
         route = "rag" if has_documents else "direct_answer"

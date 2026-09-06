@@ -9,7 +9,6 @@ import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
@@ -29,17 +28,7 @@ class QueryTransform(BaseModel):
     )
 
 
-try:
-    _gemini_query_llm = ChatGoogleGenerativeAI(
-        model=config.GEMINI_FAST_MODEL,
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.0,
-        max_retries=0,
-    ).with_structured_output(QueryTransform)
-except Exception as e:
-    logger.warning("Could not initialize Gemini query LLM: %s", e)
-    _gemini_query_llm = None
-
+# Initialize Groq structured query LLM
 _groq_query_llm = ChatGroq(
     model=config.GROQ_FAST_MODEL,  # openai/gpt-oss-20b
     api_key=config.GROQ_API_KEY,
@@ -48,18 +37,11 @@ _groq_query_llm = ChatGroq(
 
 
 async def _ainvoke_query_transform(messages: list, default_query: str) -> str:
-    if _gemini_query_llm:
-        try:
-            res: QueryTransform = await _gemini_query_llm.ainvoke(messages)
-            return res.transformed_query.strip()
-        except Exception as e:
-            logger.warning("Gemini query rewriter failed: %s. Falling back to Groq.", e)
-
     try:
         res: QueryTransform = await _groq_query_llm.ainvoke(messages)
         return res.transformed_query.strip()
     except Exception as e:
-        logger.warning("Groq query rewriter fallback failed: %s. Using default query.", e)
+        logger.warning("Groq query rewriter failed: %s. Using default query.", e)
         return default_query
 
 

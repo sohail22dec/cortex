@@ -9,7 +9,6 @@ import re
 from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 import config
@@ -17,18 +16,7 @@ import config
 logger = logging.getLogger(__name__)
 
 
-# Initialize Gemini (primary) and Groq 120b (fallback) generator models
-try:
-    _gemini_generator = ChatGoogleGenerativeAI(
-        model=config.GEMINI_REASONING_MODEL,  # gemini-3.5-flash-lite
-        google_api_key=config.GEMINI_API_KEY,
-        temperature=0.2,
-        max_retries=0,
-    )
-except Exception as e:
-    logger.warning("Could not initialize Gemini generator: %s", e)
-    _gemini_generator = None
-
+# Initialize Groq generator models
 _groq_generator = ChatGroq(
     model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
@@ -80,19 +68,12 @@ def _clean_response(content: Any) -> str:
 
 
 async def _ainvoke_generator(messages: list) -> str:
-    """Invokes primary Gemini generator, immediately falling back to Groq on failure/quota."""
-    if _gemini_generator:
-        try:
-            res = await _gemini_generator.ainvoke(messages)
-            return _clean_response(res.content)
-        except Exception as e:
-            logger.warning("Gemini generator failed or hit quota: %s. Falling back to Groq.", e)
-
+    """Invokes Groq generator."""
     try:
         res = await _groq_generator.ainvoke(messages)
         return _clean_response(res.content)
     except Exception as e:
-        logger.error("Groq generator fallback failed: %s", e)
+        logger.error("Groq generator failed: %s", e)
         return "An error occurred while generating the answer. Please try again."
 
 
@@ -303,23 +284,14 @@ async def generate_direct_answer_async(
     question: str,
     conversation_history: str | list[Any] = "",
 ) -> Dict[str, Any]:
-    """Generates a sub-second direct answer using Groq 20b primary with Gemini Flash-Lite fallback."""
+    """Generates a sub-second direct answer using Groq 20b."""
     messages = _build_generator_messages(DIRECT_SYSTEM_PROMPT, "", "", question, conversation_history)
     answer = ""
-    # 1. Attempt Groq 20b fast direct synthesis
     try:
         res = await _groq_fast_direct_llm.ainvoke(messages)
         answer = _clean_response(res.content)
     except Exception as e:
-        logger.warning("Groq 20b direct answer failed: %s. Falling back to Gemini.", e)
-
-    # 2. Fallback to Gemini if Groq failed
-    if not answer and _gemini_generator:
-        try:
-            res = await _gemini_generator.ainvoke(messages)
-            answer = _clean_response(res.content)
-        except Exception as e:
-            logger.warning("Gemini direct answer fallback failed: %s.", e)
+        logger.error("Groq 20b direct answer failed: %s.", e)
 
     if not answer:
         answer = "I am Cortex, an AI assistant. How can I help you today?"
