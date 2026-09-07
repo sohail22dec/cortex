@@ -22,12 +22,12 @@ from pathlib import Path
 from crag.graph import _crag_graph
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_PNG_PATH = BASE_DIR / "crag_workflow_graph.png"
-DEFAULT_SVG_PATH = BASE_DIR / "crag_workflow_graph.svg"
+DEFAULT_PNG_PATH = BASE_DIR / "cortex_nli_workflow_graph.png"
+DEFAULT_SVG_PATH = BASE_DIR / "cortex_nli_workflow_graph.svg"
 
 
 def build_crag_mermaid(theme: str = "dark") -> str:
-    """Construct a styled, annotated Mermaid diagram of the Cortex CRAG workflow."""
+    """Construct a styled, production-ready architecture diagram of the Cortex CRAG system with NLI Groundedness."""
     is_dark = theme == "dark"
     bg_color = "#0b0f19" if is_dark else "#ffffff"
     text_color = "#f8fafc" if is_dark else "#0f172a"
@@ -50,44 +50,79 @@ def build_crag_mermaid(theme: str = "dark") -> str:
 }}}}%%
 flowchart TD
     classDef inputStyle fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#ffffff,font-weight:700;
+    classDef guardStyle fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#fca5a5,font-weight:600;
     classDef routerStyle fill:#3b0764,stroke:#c084fc,stroke-width:2.5px,color:#ffffff,font-weight:700;
     classDef retrieveStyle fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff,font-weight:600;
-    classDef evalStyle fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#ffffff,font-weight:600;
+    classDef evalStyle fill:#78350f,stroke:#fbbf24,stroke-width:2.5px,color:#ffffff,font-weight:700;
     classDef webStyle fill:#164e63,stroke:#22d3ee,stroke-width:2px,color:#ffffff,font-weight:600;
     classDef genStyle fill:#581c87,stroke:#e879f9,stroke-width:2px,color:#ffffff,font-weight:600;
-    classDef judgeStyle fill:#831843,stroke:#f472b6,stroke-width:2px,color:#ffffff,font-weight:600;
-    classDef blockStyle fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fca5a5,font-weight:600;
+    classDef judgeStyle fill:#831843,stroke:#f472b6,stroke-width:2.5px,color:#ffffff,font-weight:700;
+    classDef safeStyle fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#ffffff,font-weight:600;
     classDef endStyle fill:#064e3b,stroke:#22c55e,stroke-width:2.5px,color:#ffffff,font-weight:700;
 
-    Start([\"💬 User Question & Context\"]):::inputStyle --> Router[\"🎯 Router Node<br/><b>Groq Fast LLM (20b)</b>\"]:::routerStyle
+    subgraph Layer1 ["1. Ingress Security & Safety (Fast 0-20ms)"]
+        UserReq(["💬 User Query"]):::inputStyle
+        RateLimiter["⏱️ Sliding-Window Rate Limiter<br/><i>In-Memory IP + Session (0 tokens)</i>"]
+        PromptGuard{{"🛡️ Tiered Prompt Guard<br/><i>Regex + Llama-Prompt-Guard-86M</i>"}}:::guardStyle
+        PIIRedactor["🔒 PII Redactor<br/><i>Masks Secrets, Emails, API Keys</i>"]
+        BlockNotice["🚫 Security Refusal Response"]:::guardStyle
+    end
 
-    %% Router Routes
-    Router -->|\"rag (Uploaded Documents)\"| Retrieve[\"📚 Vector Retrieval<br/><i>Supabase pgvector + Gemini (768d)</i>\"]:::retrieveStyle
-    Router -->|\"web_search (Live Events / Facts)\"| DirectWeb[\"🌐 Direct Web Search<br/><i>Tavily API + Fast LLM</i>\"]:::webStyle
-    Router -->|\"direct_answer (General Knowledge / Code)\"| DirectLLM[\"⚡ Direct LLM<br/><i>Groq Fast LLM (20b)</i>\"]:::genStyle
-    Router -->|\"unsafe (Prompt Injection / Attack)\"| Blocked[\"🚫 Blocked Request<br/><i>Safe Refusal Filter</i>\"]:::blockStyle
+    subgraph Layer2 ["2. Intent Routing & History Contextualization"]
+        Contextualizer["🧠 Query Contextualizer<br/><i>Resolves Multi-Turn Pronouns</i>"]
+        RouterNode{{"🎯 Intent Router<br/><i>Groq Fast LLM (20b)</i>"}}:::routerStyle
+        DirectLLM["⚡ Direct Answer Node<br/><i>General Knowledge, Code, Math</i>"]:::genStyle
+        DirectWeb["🌐 Direct Web Search Node<br/><i>Live News, Current Events</i>"]:::webStyle
+    end
 
-    %% CRAG Evaluation Loop
-    Retrieve --> Eval[\"⚖️ Retrieval Evaluator<br/><i>Groq Reasoning LLM (120b)</i>\"]:::evalStyle
-    Eval -->|\"INCORRECT (Retry < 1)\"| Rewrite[\"🔄 Query Rewrite<br/><i>Entity & Keyword Expansion</i>\"]:::evalStyle
-    Rewrite -->|\"Optimized Query\"| Retrieve
-    Eval -->|\"INCORRECT (Retry ≥ 1) / AMBIGUOUS\"| WebSearch[\"🔎 Tavily Web Search<br/><i>Fallback / Hybrid Web Context</i>\"]:::webStyle
-    Eval -->|\"CORRECT (Score ≥ 0.7)\"| Gen[\"📝 Generator<br/><i>Groq Reasoning LLM (120b)</i>\"]:::genStyle
-    WebSearch --> Gen
+    subgraph Layer3 ["3. Vector Database Retrieval"]
+        VectorSearch["📚 Cosine Similarity Search<br/><i>Top-K Chunks via Gemini (768d) & Supabase pgvector</i>"]:::retrieveStyle
+    end
 
-    %% Groundedness Loop
-    Gen --> Judge[\"🛡️ Groundedness Judge<br/><i>Independent Fact-Checker</i>\"]:::judgeStyle
-    Judge -->|\"NO (Ungrounded & Retry < 1)\"| Gen
-    Judge -->|\"NO (Retry ≥ 1)\"| Refusal[\"⚠️ Grounding Fallback<br/><i>Transparent Refusal</i>\"]:::blockStyle
+    subgraph Layer4 ["4. Corrective RAG (CRAG) Evaluation Gate"]
+        RetrievalEval{{"⚖️ CRAG Evaluator<br/><i>Grades Chunks & Bundles Query Rewriting</i>"}}:::evalStyle
+        CRAGWebSearch["🔎 Tavily Web Search Node<br/><i>Fallback / Hybrid Augmentation</i>"]:::webStyle
+    end
 
-    %% Delivery Terminal
-    EndVerified([\"✨ Delivered Verified Answer\"]):::endStyle
-    Judge -->|\"YES (Grounded)\"| EndVerified
-    Refusal --> EndVerified
-    DirectWeb --> EndVerified
-    DirectLLM --> EndVerified
-    Blocked --> EndVerified
+    subgraph Layer5 ["5. Generation & NLI Groundedness Verification"]
+        AnswerGen["📝 Generator Node<br/><i>Context-Budgeted Groq 120b</i>"]:::genStyle
+        NLIJudge{{"🧪 NLI Groundedness Judge<br/><i>DeBERTa-v3 Cross-Encoder Entailment</i>"}}:::judgeStyle
+        StrictRetryGen["⚠️ Strict Constrained Generator<br/><i>Temperature 0.0 Retry</i>"]:::genStyle
+        SafeFallback["📋 Safe Refusal & Verbatim Fallback<br/><i>Zero-Hallucination Safe Fallback</i>"]:::safeStyle
+    end
+
+    subgraph Layer6 ["6. Egress & Output Security"]
+        OutputGuard["🧹 Output Guard<br/><i>Secret Scrubbing & Format Verification</i>"]
+        FinalStream(["✨ Verified Answer Stream to Client"]):::endStyle
+    end
+
+    %% Ingress Flow
+    UserReq --> RateLimiter --> PromptGuard
+    PromptGuard -->|"Unsafe / Injection"| BlockNotice --> FinalStream
+    PromptGuard -->|"Safe"| PIIRedactor --> Contextualizer --> RouterNode
+
+    %% Routing Flow
+    RouterNode -->|"direct_answer"| DirectLLM --> OutputGuard
+    RouterNode -->|"web_search"| DirectWeb --> AnswerGen
+    RouterNode -->|"rag"| VectorSearch
+
+    %% Vector Search to Evaluator
+    VectorSearch --> RetrievalEval
+
+    %% CRAG Evaluation Branching
+    RetrievalEval -->|"CORRECT (Sufficient Context)"| AnswerGen
+    RetrievalEval -->|"INCORRECT: Attempt 1 (Rewritten Query)"| VectorSearch
+    RetrievalEval -->|"INCORRECT: Retry Exhausted (Web Fallback)"| CRAGWebSearch
+    RetrievalEval -->|"AMBIGUOUS (Partial Chunks + Web Augment)"| CRAGWebSearch
+    CRAGWebSearch --> AnswerGen
+
+    %% Generation & NLI Groundedness Flow
+    AnswerGen --> NLIJudge
+    NLIJudge -->|"Entailment (Grounded >= 0.85)"| OutputGuard --> FinalStream
+    NLIJudge -->|"Contradiction / Neutral: Attempt 1"| StrictRetryGen --> NLIJudge
+    NLIJudge -->|"Contradiction / Neutral: Retry Exhausted"| SafeFallback --> FinalStream
 """
+
 
 
 def render_mermaid_ink(mermaid_code: str, output_path: Path, fmt: str = "png", bg_color: str = "0b0f19") -> bool:
