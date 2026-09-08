@@ -11,16 +11,14 @@ from crag.state import CRAGState
 logger = logging.getLogger(__name__)
 
 
-def decide_route(state: CRAGState) -> Literal["retrieve_node", "direct_web_search_node", "direct_answer_node", "END"]:
+def decide_route(state: CRAGState) -> Literal["retrieve_node", "direct_web_search_node", "END"]:
     """Routes initial user intent from the Router Node."""
     route = state.get("route", "direct_answer")
     if route == "rag":
         return "retrieve_node"
     if route == "web_search":
         return "direct_web_search_node"
-    if route == "direct_answer":
-        return "direct_answer_node"
-    # "unsafe" terminates immediately since safety refusal was set directly by Router
+    # "direct_answer" and "unsafe" terminate immediately since answer was generated directly by Router
     return "END"
 
 
@@ -65,12 +63,12 @@ def decide_after_retrieval_eval(
 
 def decide_after_groundedness(
     state: CRAGState
-) -> Literal["generate_node", "END"]:
+) -> Literal["strict_retry_node", "safe_fallback_node", "END"]:
     """
-    Independent Groundedness Check with Strict Loop Bounds:
-    - If grounded: terminate to END.
-    - If ungrounded (hallucination detected) and retry_count < 1: retry generation with strict prompt.
-    - If retry limit reached (retry_count >= 1): terminate to END to guarantee no runaway loops.
+    NLI Groundedness Check with Strict Loop Bounds:
+    - Entailment (Grounded >= 0.85): Terminate to END / Output Guard.
+    - Contradiction / Neutral (Attempt 1, retry_count < 1): Route to Strict Constrained Generator.
+    - Contradiction / Neutral (Retry Exhausted, retry_count >= 1): Route to Safe Refusal & Verbatim Fallback.
     """
     is_grounded = state.get("is_grounded", True)
     retry_count = state.get("groundedness_retry_count", 0)
@@ -80,10 +78,10 @@ def decide_after_groundedness(
 
     if retry_count < 1:
         logger.warning(
-            "Groundedness Judge detected hallucination (retry %d/1). Retrying generation with strict prompt...",
+            "NLI Groundedness Judge detected hallucination/contradiction (retry %d/1). Routing to Strict Constrained Generator...",
             retry_count,
         )
-        return "generate_node"
+        return "strict_retry_node"
 
-    logger.warning("Groundedness hard retry limit reached (%d). Terminating to END.", retry_count)
-    return "END"
+    logger.warning("NLI Groundedness retry limit reached (%d). Routing to Safe Refusal Fallback...", retry_count)
+    return "safe_fallback_node"

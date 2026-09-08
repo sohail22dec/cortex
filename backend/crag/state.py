@@ -36,4 +36,7 @@ class CRAGState(TypedDict):
     is_grounded: bool                   # Independent Judge result
     groundedness_reason: str
     groundedness_retry_count: int       # Guard against infinite hallucination retry loops
+    contextualized_query: str           # Resolved standalone query from Query Contextualizer
+    nli_verdict: str                    # "ENTAILMENT" | "NEUTRAL" | "CONTRADICTION"
+    nli_score: float                    # Entailment probability / score (0.0 to 1.0)
 

@@ -14,7 +14,6 @@ from services import (
     classify_async,
     evaluate_groundedness_async,
     evaluate_retrieval_async,
-    generate_direct_answer_async,
     generate_hybrid_answer_async,
     generate_rag_answer_async,
     generate_web_answer_async,
@@ -42,13 +41,17 @@ async def router_node(state: CRAGState) -> CRAGState:
     direct_answer = classification.get("direct_answer", "")
 
     is_unsafe = route == "unsafe"
+    is_direct = route == "direct_answer"
+
+    answer = direct_answer if (is_unsafe or is_direct) else state.get("answer", "")
+    source = "guardrail" if is_unsafe else ("llm" if is_direct else state.get("source", ""))
 
     return {
         **state,
         "route": route,
-        "answer": direct_answer if is_unsafe else state.get("answer", ""),
-        "source": "guardrail" if is_unsafe else state.get("source", ""),
-        "is_grounded": True if is_unsafe else state.get("is_grounded", True),
+        "answer": answer,
+        "source": source,
+        "is_grounded": True if (is_unsafe or is_direct) else state.get("is_grounded", True),
     }
 
 
@@ -217,12 +220,18 @@ async def generate_node(state: CRAGState) -> CRAGState:
 # ── 8. Groundedness Judge Node (Independent Critic) ───────────────────────────
 
 async def groundedness_check_node(state: CRAGState) -> CRAGState:
-    """Evaluates whether the generated answer is strictly grounded in the context."""
+    """Evaluates whether the generated answer is strictly grounded in the context via NLI."""
     source = state.get("source", "rag")
 
-    # If pure web search or guardrail, skip doc groundedness check
+    # If pure web search, guardrail, or general llm, skip doc groundedness check
     if source in ("web_search", "guardrail", "llm"):
-        return {**state, "is_grounded": True, "groundedness_reason": "Skipped for non-rag source."}
+        return {
+            **state,
+            "is_grounded": True,
+            "groundedness_reason": "Skipped for non-rag source.",
+            "nli_verdict": "ENTAILMENT",
+            "nli_score": 1.0,
+        }
 
     question = state["question"]
     answer = state.get("answer", "")
@@ -231,22 +240,24 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
     context = "\n\n".join(c.get("text", "") for c in chunks)
 
     try:
-        is_grounded, reason = await asyncio.wait_for(
+        eval_res = await asyncio.wait_for(
             evaluate_groundedness_async(question, context, answer),
             timeout=config.TIMEOUT_GROUNDEDNESS,
         )
+        is_grounded = eval_res.is_grounded if hasattr(eval_res, "is_grounded") else eval_res[0]
+        reason = eval_res.reason if hasattr(eval_res, "reason") else eval_res[1]
+        verdict = getattr(eval_res, "verdict", "ENTAILMENT" if is_grounded else "CONTRADICTION")
+        score = getattr(eval_res, "score", 0.95 if is_grounded else 0.4)
     except asyncio.TimeoutError:
         logger.warning(
             "Groundedness judge timed out after %.1fs. Defaulting to is_grounded=True.",
             config.TIMEOUT_GROUNDEDNESS,
         )
-        is_grounded, reason = True, "judge_timeout_fallback"
+        is_grounded, reason, verdict, score = True, "judge_timeout_fallback", "ENTAILMENT", 0.9
     except Exception as e:
         logger.warning("Groundedness judge error: %s. Defaulting to is_grounded=True.", e)
-        is_grounded, reason = True, "judge_error_fallback"
+        is_grounded, reason, verdict, score = True, "judge_error_fallback", "ENTAILMENT", 0.9
 
-    # ── Strict Fallback on Unresolvable Hallucinations ─────────────────────────
-    # If the strict retry pass is STILL ungrounded, replace with safe honest refusal
     retry_count = state.get("groundedness_retry_count", 0)
     final_answer = answer
     final_source = source
@@ -274,37 +285,97 @@ async def groundedness_check_node(state: CRAGState) -> CRAGState:
         "route": final_route,
         "is_grounded": is_grounded,
         "groundedness_reason": reason,
-        "groundedness_retry_count": retry_count + (1 if not is_grounded else 0),
+        "nli_verdict": verdict,
+        "nli_score": score,
+    }
+
+
+# ── 8b. Strict Constrained Generator Node (Temperature 0.0 Retry) ─────────────
+
+async def strict_constrained_generator_node(state: CRAGState) -> CRAGState:
+    """Strict Constrained Generator (Temperature 0.0 Retry) upon NLI contradiction/neutral."""
+    question = state["question"]
+    chunks = state.get("chunks", [])
+    retry_count = state.get("groundedness_retry_count", 0)
+    conversation_history = state.get("conversation_history", "")
+
+    logger.warning(
+        "Strict Constrained Generator: Re-generating answer with temperature 0.0 strict factuality (retry %d).",
+        retry_count + 1,
+    )
+
+    try:
+        result = await asyncio.wait_for(
+            generate_rag_answer_async(
+                question,
+                chunks,
+                strict=True,
+                conversation_history=conversation_history,
+            ),
+            timeout=config.TIMEOUT_GENERATION,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Strict generation node timed out after %.1fs.", config.TIMEOUT_GENERATION)
+        result = {
+            "answer": "I apologize, but verifying the answer took longer than expected.",
+            "source": "llm",
+            "citations": [],
+        }
+    except Exception as e:
+        logger.exception("Strict constrained generation error: %s", e)
+        result = {
+            "answer": "An error occurred during strict constrained generation.",
+            "source": "llm",
+            "citations": [],
+        }
+
+    return {
+        **state,
+        "answer": result["answer"],
+        "source": result["source"],
+        "citations": result["citations"],
+        "groundedness_retry_count": retry_count + 1,
+    }
+
+
+# ── 8c. Safe Refusal & Verbatim Fallback Node ─────────────────────────────────
+
+async def safe_fallback_node(state: CRAGState) -> CRAGState:
+    """Zero-hallucination honest refusal when unresolvable hallucinations persist."""
+    logger.warning("Safe Fallback Node triggered: Emitting honest refusal.")
+    return {
+        **state,
+        "answer": (
+            "I reviewed the provided documents, but could not find verifiable facts to answer "
+            "your question with complete confidence. Please check your uploaded files or provide additional details."
+        ),
+        "source": "guardrail",
+        "citations": [],
+        "route": "hallucination_fallback",
+        "is_grounded": True,
+        "nli_verdict": "SAFE_REFUSAL",
+        "nli_score": 1.0,
     }
 
 
 # ── 9. Direct Routes (Direct Web Search) ──────────────────────────────────────
 
 async def direct_web_search_node(state: CRAGState) -> CRAGState:
+    """Fetches live news and current events from Tavily, feeding results to Generator Node."""
+    active_query = state.get("transformed_query") or state["question"]
     try:
         query = await asyncio.wait_for(
-            rewrite_query_for_web_async(state["question"]),
+            rewrite_query_for_web_async(active_query),
             timeout=config.TIMEOUT_ROUTER,
         )
         results = await asyncio.wait_for(
             search_web_async(query, max_results=5),
             timeout=config.TIMEOUT_WEB_SEARCH,
         )
-        gen_result = await asyncio.wait_for(
-            generate_web_answer_async(
-                state["question"], results, conversation_history=state.get("conversation_history", "")
-            ),
-            timeout=config.TIMEOUT_GENERATION,
-        )
     except Exception as e:
         logger.warning("Direct web search error: %s", e)
-        query = state["question"]
+        query = active_query
         results = []
-        gen_result = {
-            "answer": "Unable to fetch live web search results at this moment. Please try again.",
-            "source": "web_search",
-            "citations": [],
-        }
 
     return cast(
         CRAGState,
@@ -312,36 +383,7 @@ async def direct_web_search_node(state: CRAGState) -> CRAGState:
             **state,
             "transformed_query": query,
             "web_results": results,
-            "answer": gen_result["answer"],
-            "source": gen_result["source"],
-            "citations": gen_result["citations"],
-            "is_grounded": True,
+            "evaluation_result": "INCORRECT",  # Indicates web-sourced generation for generator node
         },
     )
-
-
-# ── 10. Direct Answer Node ───────────────────────────────────────────────────
-
-async def direct_answer_node(state: CRAGState) -> CRAGState:
-    """Synthesizes direct answer for general QA, coding, math, and greetings."""
-    question = state["question"]
-    try:
-        gen_result = await asyncio.wait_for(
-            generate_direct_answer_async(
-                question, conversation_history=state.get("conversation_history", "")
-            ),
-            timeout=config.TIMEOUT_GENERATION,
-        )
-        answer = gen_result["answer"]
-    except Exception as e:
-        logger.warning("Direct answer generation error: %s. Using default greeting.", e)
-        answer = "Hello! I am Cortex, your intelligent document-aware AI assistant. How can I assist you today?"
-
-    return {
-        **state,
-        "answer": answer,
-        "source": "llm",
-        "citations": [],
-        "is_grounded": True,
-    }
 

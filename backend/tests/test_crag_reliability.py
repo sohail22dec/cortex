@@ -49,6 +49,9 @@ def _create_test_state(**kwargs: Any) -> CRAGState:
         "is_grounded": True,
         "groundedness_reason": "",
         "groundedness_retry_count": 0,
+        "contextualized_query": "",
+        "nli_verdict": "ENTAILMENT",
+        "nli_score": 1.0,
     }
     for key, value in kwargs.items():
         state[key] = value  # type: ignore[literal-required]
@@ -62,7 +65,7 @@ class TestCRAGRouteAndLoopBounds(unittest.TestCase):
 
     def test_decide_route_direct_answer(self):
         state = _create_test_state(route="direct_answer", answer="Hello!", source="llm")
-        self.assertEqual(decide_route(state), "direct_answer_node")
+        self.assertEqual(decide_route(state), "END")
 
     def test_decide_route_rag_and_web(self):
         rag_state = _create_test_state(route="rag", has_documents=True)
@@ -81,17 +84,17 @@ class TestCRAGRouteAndLoopBounds(unittest.TestCase):
         self.assertEqual(decide_after_retrieval_eval(state_retry_2), "web_search_node")
 
     def test_hard_loop_bounds_groundedness(self):
-        # Grounded -> END
+        # Grounded (Entailment >= 0.85) -> END
         state_grounded = _create_test_state(is_grounded=True, groundedness_retry_count=0)
         self.assertEqual(decide_after_groundedness(state_grounded), "END")
 
-        # 1st hallucination (retry_count = 0) -> Retry generation
+        # 1st hallucination (retry_count = 0) -> Route to Strict Constrained Generator
         state_ungrounded_1 = _create_test_state(is_grounded=False, groundedness_retry_count=0)
-        self.assertEqual(decide_after_groundedness(state_ungrounded_1), "generate_node")
+        self.assertEqual(decide_after_groundedness(state_ungrounded_1), "strict_retry_node")
 
-        # 2nd hallucination (retry_count >= 1) -> Bound enforced, forward to END
+        # 2nd hallucination (retry_count >= 1) -> Bound enforced, forward to Safe Fallback
         state_ungrounded_2 = _create_test_state(is_grounded=False, groundedness_retry_count=1)
-        self.assertEqual(decide_after_groundedness(state_ungrounded_2), "END")
+        self.assertEqual(decide_after_groundedness(state_ungrounded_2), "safe_fallback_node")
 
 
 class TestNodeTimeoutsAndFallbacks(unittest.IsolatedAsyncioTestCase):
@@ -158,6 +161,16 @@ class TestNodeTimeoutsAndFallbacks(unittest.IsolatedAsyncioTestCase):
             # On timeout, defaults to True to avoid hanging the user
             self.assertTrue(res["is_grounded"])
             self.assertEqual(res["groundedness_reason"], "judge_timeout_fallback")
+
+
+    async def test_safe_fallback_node(self):
+        from crag.nodes import safe_fallback_node
+        state = _create_test_state(question="test", groundedness_retry_count=1)
+        res = await safe_fallback_node(state)
+        self.assertEqual(res["source"], "guardrail")
+        self.assertEqual(res["route"], "hallucination_fallback")
+        self.assertTrue(res["is_grounded"])
+        self.assertIn("could not find verifiable facts", res["answer"])
 
 
 if __name__ == "__main__":

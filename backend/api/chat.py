@@ -63,6 +63,8 @@ class ChatResponse(BaseModel):
     is_grounded: bool | None = None
     groundedness_reason: str | None = None
     transformed_query: str | None = None
+    nli_verdict: str | None = None
+    nli_score: float | None = None
 
 
 @router.post(
@@ -164,6 +166,8 @@ async def chat(request: ChatRequest):
             is_grounded=result.get("is_grounded"),
             groundedness_reason=result.get("groundedness_reason") or None,
             transformed_query=result.get("transformed_query") or None,
+            nli_verdict=result.get("nli_verdict") or None,
+            nli_score=result.get("nli_score"),
         )
     except HTTPException:
         raise

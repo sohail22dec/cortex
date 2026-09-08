@@ -26,10 +26,11 @@ def _build_crag_graph() -> Any:
     graph.add_node("web_search_node", nodes.web_search_node)
     graph.add_node("generate_node", nodes.generate_node)
     graph.add_node("groundedness_check_node", nodes.groundedness_check_node)
+    graph.add_node("strict_retry_node", nodes.strict_constrained_generator_node)
+    graph.add_node("safe_fallback_node", nodes.safe_fallback_node)
     graph.add_node("direct_web_search_node", nodes.direct_web_search_node)
-    graph.add_node("direct_answer_node", nodes.direct_answer_node)
 
-    # 2. Set Entry Point
+    # 2. Set Entry Point: Directly to Intent Router
     graph.set_entry_point("router")
 
     # 3. Router Conditional Edges
@@ -39,14 +40,12 @@ def _build_crag_graph() -> Any:
         {
             "retrieve_node": "retrieve_node",
             "direct_web_search_node": "direct_web_search_node",
-            "direct_answer_node": "direct_answer_node",
             "END": END,
         },
     )
 
-    # Direct Answer Route Termination
-    graph.add_edge("direct_answer_node", END)
-
+    # Direct Web Search feeds into Context-Budgeted Generator Node
+    graph.add_edge("direct_web_search_node", "generate_node")
 
     # 4. CRAG Core Pipeline Edges
     graph.add_edge("retrieve_node", "retrieval_eval_node")
@@ -63,19 +62,23 @@ def _build_crag_graph() -> Any:
     # Web search fallback & hybrid path -> generate
     graph.add_edge("web_search_node", "generate_node")
 
-    # Generation -> Independent Groundedness Fact-Check Judge
+    # 5. Generation -> NLI Groundedness Fact-Check Judge
     graph.add_edge("generate_node", "groundedness_check_node")
     graph.add_conditional_edges(
         "groundedness_check_node",
         edges.decide_after_groundedness,
         {
-            "generate_node": "generate_node",
+            "strict_retry_node": "strict_retry_node",
+            "safe_fallback_node": "safe_fallback_node",
             "END": END,
         },
     )
 
-    # Direct Web Search Route Termination
-    graph.add_edge("direct_web_search_node", END)
+    # Strict Constrained Generator loops back to NLI Groundedness Judge
+    graph.add_edge("strict_retry_node", "groundedness_check_node")
+
+    # Safe Refusal & Verbatim Fallback terminates to END / Output Guard
+    graph.add_edge("safe_fallback_node", END)
 
     return graph.compile()
 
@@ -141,6 +144,9 @@ async def run_crag_async(
         "is_grounded": True,
         "groundedness_reason": "",
         "groundedness_retry_count": 0,
+        "contextualized_query": "",
+        "nli_verdict": "",
+        "nli_score": 1.0,
     }
 
     run_config = {
@@ -165,6 +171,9 @@ async def run_crag_async(
         "is_grounded": final_state.get("is_grounded", True),
         "groundedness_reason": final_state.get("groundedness_reason", ""),
         "transformed_query": final_state.get("transformed_query", ""),
+        "contextualized_query": final_state.get("contextualized_query", ""),
+        "nli_verdict": final_state.get("nli_verdict", ""),
+        "nli_score": final_state.get("nli_score", 1.0),
         "valid_doc_sources": valid_doc_sources,
         "valid_web_urls": valid_web_urls,
     }

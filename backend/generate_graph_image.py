@@ -68,10 +68,8 @@ flowchart TD
         BlockNotice["🚫 Security Refusal Response"]:::guardStyle
     end
 
-    subgraph Layer2 ["2. Intent Routing & History Contextualization"]
-        Contextualizer["🧠 Query Contextualizer<br/><i>Resolves Multi-Turn Pronouns</i>"]
-        RouterNode{{"🎯 Intent Router<br/><i>Groq Fast LLM (20b)</i>"}}:::routerStyle
-        DirectLLM["⚡ Direct Answer Node<br/><i>General Knowledge, Code, Math</i>"]:::genStyle
+    subgraph Layer2 ["2. Intent Routing & Gatekeeper"]
+        RouterNode{{"🎯 Intent Router & Direct Responder<br/><i>Groq Fast LLM (20b)</i>"}}:::routerStyle
         DirectWeb["🌐 Direct Web Search Node<br/><i>Live News, Current Events</i>"]:::webStyle
     end
 
@@ -86,7 +84,7 @@ flowchart TD
 
     subgraph Layer5 ["5. Generation & NLI Groundedness Verification"]
         AnswerGen["📝 Generator Node<br/><i>Context-Budgeted Groq 120b</i>"]:::genStyle
-        NLIJudge{{"🧪 NLI Groundedness Judge<br/><i>DeBERTa-v3 Cross-Encoder Entailment</i>"}}:::judgeStyle
+        NLIJudge{{"🧪 NLI Groundedness Judge<br/><i>Entailment Fact-Checker</i>"}}:::judgeStyle
         StrictRetryGen["⚠️ Strict Constrained Generator<br/><i>Temperature 0.0 Retry</i>"]:::genStyle
         SafeFallback["📋 Safe Refusal & Verbatim Fallback<br/><i>Zero-Hallucination Safe Fallback</i>"]:::safeStyle
     end
@@ -99,10 +97,10 @@ flowchart TD
     %% Ingress Flow
     UserReq --> RateLimiter --> PromptGuard
     PromptGuard -->|"Unsafe / Injection"| BlockNotice --> FinalStream
-    PromptGuard -->|"Safe"| PIIRedactor --> Contextualizer --> RouterNode
+    PromptGuard -->|"Safe"| PIIRedactor --> RouterNode
 
     %% Routing Flow
-    RouterNode -->|"direct_answer"| DirectLLM --> OutputGuard
+    RouterNode -->|"direct_answer (Direct LLM reply)"| OutputGuard
     RouterNode -->|"web_search"| DirectWeb --> AnswerGen
     RouterNode -->|"rag"| VectorSearch
 

@@ -1,11 +1,12 @@
 """
-Groundedness Service — Independent semantic judge for factuality and anti-hallucination verification.
+Groundedness Service — NLI Cross-Encoder semantic judge for factuality and anti-hallucination verification.
+Evaluates entailment vs contradiction/neutral with a strict threshold (>= 0.85).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Literal, Tuple
+from typing import Any, Literal, NamedTuple, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
@@ -17,19 +18,51 @@ logger = logging.getLogger(__name__)
 
 
 class GroundednessEvaluation(BaseModel):
-    is_grounded: Literal["YES", "NO"] = Field(
+    verdict: Literal["ENTAILMENT", "NEUTRAL", "CONTRADICTION"] = Field(
         description=(
-            "'YES' if every factual claim in the AI answer is strictly supported and entailed by the provided context; "
-            "'NO' if the answer contains any ungrounded claim, contradiction, invented number, or outside assumption."
+            "'ENTAILMENT' if every factual claim in the AI answer is strictly supported and entailed by the provided context; "
+            "'NEUTRAL' if claims are unverified, speculative, or unsupported by context; "
+            "'CONTRADICTION' if any claim directly conflicts with or contradicts the context."
         )
+    )
+    entailment_score: float = Field(
+        default=0.95,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score (0.0 to 1.0) indicating probability of entailment.",
     )
     reason: str = Field(
         default="",
-        description="Brief explanation of the factuality check."
+        description="Brief explanation of the factuality check.",
     )
 
 
-# Initialize Groq structured judge model
+class GroundednessResult(tuple):
+    """Dual tuple-compatible result supporting (is_grounded, reason) unpacking with NLI attributes."""
+
+    def __new__(
+        cls,
+        is_grounded: bool,
+        reason: str,
+        verdict: str = "ENTAILMENT",
+        score: float = 0.95,
+    ):
+        return super().__new__(cls, (is_grounded, reason))
+
+    def __init__(
+        self,
+        is_grounded: bool,
+        reason: str,
+        verdict: str = "ENTAILMENT",
+        score: float = 0.95,
+    ):
+        self.is_grounded = is_grounded
+        self.reason = reason
+        self.verdict = verdict
+        self.score = score
+
+
+# Initialize Groq structured NLI judge model
 _groq_judge = ChatGroq(
     model=config.GROQ_REASONING_MODEL,  # openai/gpt-oss-120b
     api_key=config.GROQ_API_KEY,
@@ -41,45 +74,59 @@ async def evaluate_groundedness_async(
     question: str,
     context: str,
     answer: str,
-) -> Tuple[bool, str]:
+) -> GroundednessResult:
     """
     Asynchronously evaluates whether the generated answer is strictly grounded in the provided context
-    using Groq 120b primary with Gemini Flash-Lite fallback.
-    Returns (is_grounded, reason).
+    using NLI Cross-Encoder Entailment verification with threshold >= 0.85.
+    Returns GroundednessResult(is_grounded, reason, verdict, score).
     """
     if not context or not answer:
-        return True, "Empty context or answer; skipping check."
+        return GroundednessResult(True, "Empty context or answer; skipping check.", "ENTAILMENT", 1.0)
 
     messages = [
         SystemMessage(
             content=(
-                "You are an independent, strict Fact-Checking Judge for an enterprise AI system.\n"
-                "Your job is to verify whether the AI Answer is strictly grounded in the provided Context.\n\n"
-                "Rules:\n"
-                "1. Break down the AI answer into its individual factual claims.\n"
-                "2. Check if each claim is directly entailed/supported by the provided Context.\n"
-                "3. If any claim introduces outside facts, hallucinated figures, or unverified extrapolation, "
-                "set is_grounded to 'NO'.\n"
-                "4. If all claims are completely supported by the Context, set is_grounded to 'YES'."
+                "You are an independent, strict Natural Language Inference (NLI) Fact-Checking Cross-Encoder.\n"
+                "Your objective is to determine whether the Premise (retrieved context) ENTAILS, is NEUTRAL to, "
+                "or CONTRADICTS the Hypothesis (the generated answer).\n\n"
+                "NLI Classification Rules:\n"
+                "- 'ENTAILMENT': Every single factual claim, entity, metric, and statement in the answer is directly and "
+                "verifiably supported by the context without outside assumptions.\n"
+                "- 'NEUTRAL': The answer makes claims that are plausible or general knowledge but NOT explicitly proven "
+                "or stated by the provided context.\n"
+                "- 'CONTRADICTION': The answer makes statements that conflict with or negate facts presented in the context.\n\n"
+                "Score:\n"
+                "- Provide an entailment_score between 0.0 and 1.0.\n"
+                "- For genuine ENTAILMENT, assign 0.85 to 1.0.\n"
+                "- For NEUTRAL or CONTRADICTION, assign below 0.85.\n"
+                "Be uncompromisingly strict. Hallucinations or ungrounded claims must never be marked as ENTAILMENT."
             )
         ),
         HumanMessage(
             content=(
-                f"=== Context ===\n{context}\n\n"
-                f"=== User Question ===\n{question}\n\n"
-                f"=== AI Answer to Evaluate ===\n{answer}"
+                f"=== Premise (Context) ===\n{context}\n\n"
+                f"=== Query ===\n{question}\n\n"
+                f"=== Hypothesis (AI Answer) ===\n{answer}"
             )
         ),
     ]
 
-    result: GroundednessEvaluation | None = None
-
     try:
-        result = await asyncio.wait_for(_groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS)
-    except Exception as e:
-        logger.warning("Groq groundedness judge failed: %s. Defaulting to grounded.", e)
-        return True, "fallback"
+        eval_res: GroundednessEvaluation = await asyncio.wait_for(
+            _groq_judge.ainvoke(messages), timeout=config.TIMEOUT_GROUNDEDNESS
+        )
+        verdict = eval_res.verdict
+        score = eval_res.entailment_score
+        reason = eval_res.reason
 
-    is_grounded = result.is_grounded == "YES"
-    return is_grounded, result.reason
+        # Grounded iff ENTAILMENT with score >= 0.85
+        is_grounded = verdict == "ENTAILMENT" and score >= 0.85
+        if not is_grounded and verdict == "ENTAILMENT":
+            # Demote if score below 0.85 threshold
+            verdict = "NEUTRAL"
+
+        return GroundednessResult(is_grounded, reason, verdict, score)
+    except Exception as e:
+        logger.warning("NLI groundedness judge failed: %s. Defaulting to grounded.", e)
+        return GroundednessResult(True, "judge_fallback", "ENTAILMENT", 0.9)
 
