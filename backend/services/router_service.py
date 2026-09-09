@@ -32,7 +32,7 @@ class RouteDecision(BaseModel):
 
 # Initialize Groq structured router model
 _groq_router = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
+    model=config.GROQ_REASONING_MODEL,
     api_key=config.GROQ_API_KEY,
     temperature=0.0,
 ).with_structured_output(RouteDecision)
