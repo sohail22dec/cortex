@@ -47,7 +47,7 @@ ENABLE_PRESIDIO_NER = os.getenv("ENABLE_PRESIDIO_NER", "false").lower() in ("tru
 ENABLE_INGESTION_GUARD = os.getenv("ENABLE_INGESTION_GUARD", "true").lower() in ("true", "1")
 
 # ── Per-Node Execution Timeouts (Seconds) ────────────────────────────────────
-TIMEOUT_ROUTER = float(os.getenv("TIMEOUT_ROUTER", "5.0"))
+TIMEOUT_ROUTER = float(os.getenv("TIMEOUT_ROUTER", "15.0"))
 TIMEOUT_RETRIEVAL = float(os.getenv("TIMEOUT_RETRIEVAL", "4.0"))
 TIMEOUT_RETRIEVAL_EVAL = float(os.getenv("TIMEOUT_RETRIEVAL_EVAL", "5.0"))
 TIMEOUT_WEB_SEARCH = float(os.getenv("TIMEOUT_WEB_SEARCH", "5.0"))

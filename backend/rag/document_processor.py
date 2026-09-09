@@ -105,6 +105,14 @@ def extract_structural_topics(tmp_path: str, suffix: str, docs: list) -> str:
         if len(cleaned_topics) >= 8:
             break
 
+    if not cleaned_topics and docs:
+        first_chunk = docs[0].page_content.strip()
+        for line in first_chunk.splitlines():
+            line_str = line.strip()
+            if len(line_str) >= 5 and not line_str.startswith(("http", "www")):
+                cleaned_topics.append(line_str[:80])
+                break
+
     return ", ".join(cleaned_topics)
 
 

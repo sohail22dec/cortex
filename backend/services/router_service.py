@@ -22,11 +22,15 @@ class RouteDecision(BaseModel):
     route: Literal["rag", "web_search", "direct_answer", "unsafe"] = Field(
         description=(
             "The selected execution route: "
-            "'rag' for questions about uploaded documents or policy manuals; "
+            "'rag' for questions seeking facts, rules, procedures, or domain specifics contained within uploaded documents; "
             "'web_search' for live/current events, weather, stock prices, or recent news; "
             "'direct_answer' for greetings, identity/persona questions, general concepts, explanations, coding, or math; "
             "'unsafe' for requests asking for malware, cyberattacks, exploit payloads, dangerous weapons, harassment, or self-harm."
         )
+    )
+    reason: str = Field(
+        default="",
+        description="Brief 1-sentence reasoning for the chosen route based on query intent and document content context."
     )
 
 
@@ -39,14 +43,14 @@ _groq_router = ChatGroq(
 
 
 def _format_documents(documents: list) -> str:
-    """Format documents with their extracted topics for the system prompt."""
+    """Format documents with filenames and extracted topics for the system prompt."""
     if not documents:
         return "None"
     lines = []
     for doc in documents:
         if isinstance(doc, dict):
             name = doc.get("filename") or doc.get("name") or "Unknown"
-            topics = doc.get("topics", "").strip()
+            topics = (doc.get("topics") or "").strip()
             if topics:
                 lines.append(f'   - "{name}" (Topics: {topics})')
             else:
@@ -61,9 +65,9 @@ def _build_system_prompt(has_documents: bool, documents: list) -> str:
 
     if has_documents and documents:
         doc_context = _format_documents(documents)
-        rag_section = f"""- "rag": Inquiries seeking internal facts, proprietary guidelines, procedures, or domain specifics contained within the user's uploaded documents:
+        rag_section = f"""- "rag": Inquiries seeking internal facts, proprietary guidelines, procedures, domain specifics, or data contained within the user's uploaded documents:
 {doc_context}
-  Choose "rag" when the question seeks information specific to these documents or asks to analyze, extract, or summarize uploaded material."""
+  Choose "rag" when the question asks about, relates to, or can be answered by the content, policies, or topics of these uploaded documents (even if the user does not explicitly name the file)."""
     else:
         # Dynamic Token Pruning: omit RAG rule if no documents exist
         rag_section = """- "rag": (DISABLED: No documents are currently uploaded by the user)."""
@@ -82,9 +86,10 @@ Analyze the user's active query and classify their primary intent into the singl
 - "direct_answer": General knowledge, conceptual explanations, coding assistance, mathematical calculations, logic problems, creative writing, or casual greetings that do not require external documents or real-time data.
 
 Decision Guidelines:
-- If a query is a general concept (e.g. "Explain binary search", "What is machine learning?") that has no dependency on uploaded files, prefer "direct_answer".
-- If a query pertains to the specific topics, policies, or content of the uploaded files, route to "rag".
-- Prioritize user safety above all other routes."""
+- If uploaded documents exist and the user query pertains to the subjects, policies, rules, specifications, or domain covered in those documents, ALWAYS route to "rag" so the system retrieves the relevant document chunks from the vector store.
+- If a query is a general concept (e.g. "Explain binary search", "What is machine learning?", "Write a python script to reverse a string") that has no connection to the uploaded documents, choose "direct_answer".
+- If the query requires current real-world events or live data outside of the uploaded documents, choose "web_search".
+- Prioritize user safety ("unsafe") above all other routes."""
 
 
 
